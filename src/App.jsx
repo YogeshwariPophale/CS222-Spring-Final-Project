@@ -59,7 +59,8 @@ const TABS = [
   ['pdf', FileText, 'PDF'],
   ['latex', FileText, 'LaTeX'],
   ['matrix', ClipboardCheck, 'Matrix'],
-  ['evaluation', ListChecks, 'Review']
+  ['evaluation', ListChecks, 'Review'],
+  ['analysis', Sparkles, 'Analysis']
 ];
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
@@ -72,6 +73,7 @@ function App() {
   const [questions, setQuestions] = useState([]);
   const [customNote, setCustomNote] = useState('');
   const [result, setResult] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
   const [pdfUrl, setPdfUrl] = useState('');
   const [runLog, setRunLog] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -216,15 +218,29 @@ function App() {
         topic: project.topic || project.title,
         requirements: DEFAULT_REQUIREMENTS
       });
-      const nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
+      
+      let nextPdfUrl = '';
+      try {
+        nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
+      } catch (pdfError) {
+        console.warn('PDF export failed (pdflatex not installed):', pdfError.message);
+      }
+
+      // Run analysis
+      const analysisData = await postJson('/api/analyze/proposal', {
+        ...project,
+        complianceMatrix: data.complianceMatrix || []
+      });
 
       setResult(data);
+      setAnalysis(analysisData);
       updatePdfUrl(nextPdfUrl);
-      setActiveTab('pdf');
+      setActiveTab(nextPdfUrl ? 'pdf' : 'analysis');
       setRunLog((current) => [
         ...current,
         logEntry('Draft', `Generated proposal using ${data.mode}.`),
-        logEntry('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
+        logEntry('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`),
+        logEntry('Score', `${analysisData.scores.overall}/100 (${analysisData.scores.grade})`)
       ]);
     } catch (requestError) {
       setError(readError(requestError));
@@ -323,7 +339,21 @@ function App() {
     setError('');
 
     try {
-      const href = pdfUrl || (await exportPdfUrl(result.proposalLatex, project.title || 'proposal'));
+      let href = pdfUrl;
+      
+      if (!href) {
+        // Try to generate PDF if not already cached
+        try {
+          href = await exportPdfUrl(result.proposalLatex, project.title || 'proposal');
+        } catch (pdfError) {
+          // If PDF generation fails, download LaTeX instead
+          console.warn('PDF export not available:', pdfError.message);
+          downloadLatex();
+          setRunLog((current) => [...current, logEntry('Export', 'Downloaded proposal.tex (PDF unavailable - install LaTeX compiler)')]);
+          return;
+        }
+      }
+      
       const anchor = document.createElement('a');
       anchor.href = href;
       anchor.download = 'proposal.pdf';
@@ -716,7 +746,7 @@ function App() {
                 </div>
               </div>
 
-              {renderArtifact(activeTab, result, pdfUrl)}
+              {renderArtifact(activeTab, result, pdfUrl, analysis)}
             </section>
           </div>
         </section>
@@ -725,8 +755,18 @@ function App() {
   );
 }
 
+const API_BASE = typeof import.meta.env !== 'undefined' && import.meta.env.VITE_API_URL 
+  ? import.meta.env.VITE_API_URL 
+  : (() => {
+      if (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1') {
+        return 'http://127.0.0.1:8787';
+      }
+      return '';
+    })();
+
 async function postJson(url, body) {
-  const response = await fetch(url, {
+  const apiUrl = API_BASE ? `${API_BASE}${url}` : url;
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -741,7 +781,8 @@ async function postJson(url, body) {
 }
 
 async function exportPdfUrl(proposalLatex, title) {
-  const response = await fetch('/api/export/pdf', {
+  const apiUrl = API_BASE ? `${API_BASE}/api/export/pdf` : '/api/export/pdf';
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -759,7 +800,7 @@ async function exportPdfUrl(proposalLatex, title) {
   return URL.createObjectURL(blob);
 }
 
-function renderArtifact(activeTab, result, pdfUrl) {
+function renderArtifact(activeTab, result, pdfUrl, analysis) {
   if (!result) {
     return <EmptyState text="Proposal artifacts appear after Generate Proposal." />;
   }
@@ -769,6 +810,71 @@ function renderArtifact(activeTab, result, pdfUrl) {
       <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
     ) : (
       <EmptyState text="PDF preview is rendering." />
+    );
+  }
+
+  if (activeTab === 'analysis') {
+    return analysis ? (
+      <div className="analysis-wrap">
+        <div className="score-card">
+          <div className={`score-circle ${analysis.scores.gradeColor}`}>
+            <div className="score-value">{analysis.scores.overall}</div>
+            <div className="score-grade">{analysis.scores.grade}</div>
+          </div>
+          <div className="score-details">
+            <div className="score-item"><span>Research Quality:</span> <strong>{analysis.scores.researchQuality}/100</strong></div>
+            <div className="score-item"><span>Clarity:</span> <strong>{analysis.scores.clarity}/100</strong></div>
+            <div className="score-item"><span>Technical Depth:</span> <strong>{analysis.scores.technical}/100</strong></div>
+            <div className="score-item"><span>References:</span> <strong>{analysis.scores.references}/100</strong></div>
+            <div className="score-item"><span>Completion:</span> <strong>{analysis.scores.completion}/100</strong></div>
+          </div>
+        </div>
+
+        <div className="analysis-section">
+          <h3>Graduate Readiness</h3>
+          <div className="readiness-bar">
+            <div className="readiness-fill" style={{width: `${analysis.graduateReadiness.readinessPercent}%`}}></div>
+          </div>
+          <p><strong>{analysis.graduateReadiness.readinessPercent}%</strong> - {analysis.graduateReadiness.readinessLevel}</p>
+          <ul>
+            {analysis.graduateReadiness.checklist.map((item, i) => (
+              <li key={i} className={item.met ? 'met' : 'unmet'}>
+                {item.met ? '✓' : '✗'} {item.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="analysis-section">
+          <h3>Language & Technical Analysis</h3>
+          <p><strong>Level:</strong> {analysis.languageAnalysis.level}</p>
+          <p><strong>Academic Tone:</strong> {analysis.languageAnalysis.academicTone}/100</p>
+          <p><strong>Technical Depth:</strong> {analysis.languageAnalysis.technicalDepth}/100 ({analysis.languageAnalysis.technicalTermCount} terms)</p>
+          <p><strong>Readability:</strong> {analysis.languageAnalysis.readability}/100</p>
+          <p><strong>Avg Sentence Length:</strong> {analysis.languageAnalysis.averageSentenceLength} words</p>
+        </div>
+
+        <div className="analysis-section">
+          <h3>References Analysis</h3>
+          <p><strong>Count:</strong> {analysis.referenceAnalysis.count}</p>
+          <p><strong>Quality:</strong> {analysis.referenceAnalysis.quality}</p>
+          <p><strong>Score:</strong> {analysis.referenceAnalysis.score}/100</p>
+          {analysis.referenceAnalysis.suggestions.map((s, i) => (
+            <p key={i} className="suggestion">💡 {s}</p>
+          ))}
+        </div>
+
+        <div className="analysis-section">
+          <h3>Top Recommendations</h3>
+          {analysis.recommendations.slice(0, 3).map((rec, i) => (
+            <div key={i} className={`recommendation ${rec.priority.toLowerCase()}`}>
+              <strong>{rec.area}</strong>: {rec.message}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <EmptyState text="Analysis not available." />
     );
   }
 

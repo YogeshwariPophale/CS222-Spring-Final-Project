@@ -288,6 +288,9 @@ async function callModel({ systemPrompt, payload, model, temperature }) {
 async function callGemini({ systemPrompt, payload, model, temperature }) {
   const baseUrl = clean(process.env.LLM_API_URL) || 'https://generativelanguage.googleapis.com/v1beta';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(model)}:generateContent`;
+  
+  console.log('[Gemini API] Calling endpoint:', endpoint);
+  
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -314,18 +317,23 @@ async function callGemini({ systemPrompt, payload, model, temperature }) {
   const data = await response.json();
 
   if (!response.ok) {
+    console.error('[Gemini API] Error response:', JSON.stringify(data, null, 2));
     throw new Error(data?.error?.message || `Gemini API returned ${response.status}`);
   }
 
+  console.log('[Gemini API] Success - received response');
+  
   const content = data?.candidates?.[0]?.content?.parts
     ?.map((part) => part.text)
     .filter(Boolean)
     .join('\n');
 
   if (!content) {
+    console.error('[Gemini API] No text content in response:', JSON.stringify(data, null, 2));
     throw new Error('Gemini API returned no text content.');
   }
 
+  console.log('[Gemini API] Content length:', content.length);
   return content;
 }
 
