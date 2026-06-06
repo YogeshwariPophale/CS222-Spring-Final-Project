@@ -62,6 +62,8 @@ If you are using VS Code's Simple Browser and the embedded PDF panel stays blank
 
 PDF export first tries the local LaTeX compiler (`tectonic`) and falls back to a built-in readable PDF renderer if the compiler is unavailable, so the PDF button should still produce a file in basic local setups.
 
+If your local VS Code copy shows duplicate declarations, merge markers, or `Unexpected identifier 'writeFile'`, follow the [local repair guide](docs/local_repair_guide.md) to restore the clean files before running the app again.
+
 We encourage students to start with the [Gemini API free tier](https://ai.google.dev/gemini-api/docs/pricing). If the free tier is not enough for your project, email the TA at <yfu093@ucr.edu> to request additional API access. Keep all API keys out of GitHub and document your setup.
 
 ## Resources
