@@ -24,7 +24,10 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Evaluation plan
 - Risks and mitigation
 - Resources or budget
-- References, assumptions, or source notes`;
+- References, assumptions, or source notes
+- Uploaded reference paper notes when available
+- Researcher-provided material or override notes when available
+- Target language or translation instructions when requested`;
 
 const EMPTY_PROJECT = {
   title: '',
@@ -35,6 +38,11 @@ const EMPTY_PROJECT = {
   evaluation: '',
   resources: '',
   references: '',
+  uploadedReferences: '',
+  researcherMaterial: '',
+  overrideInstructions: '',
+  targetLanguage: 'English',
+  translationModel: '',
   requirements: DEFAULT_REQUIREMENTS
 };
 
@@ -44,7 +52,10 @@ const PROJECT_FIELDS = [
   ['evaluation', 'Evaluation'],
   ['timeline', 'Timeline'],
   ['resources', 'Resources'],
-  ['references', 'Sources']
+  ['references', 'Sources'],
+  ['uploadedReferences', 'Uploaded Reference Notes'],
+  ['researcherMaterial', 'Researcher Material'],
+  ['overrideInstructions', 'Override Instructions']
 ];
 
 const STAGES = [
@@ -63,6 +74,7 @@ const TABS = [
 ];
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
+
 
 function App() {
   const [topicInput, setTopicInput] = useState('');
@@ -278,6 +290,34 @@ function App() {
     clearArtifacts();
   }
 
+  async function uploadReferenceFiles(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    setStatus('uploading');
+    setError('');
+
+    try {
+      const notes = await Promise.all(files.map(readReferenceFile));
+      const fileList = files.map((file) => file.name).join(', ');
+      const nextNote = notes.join('\n\n');
+
+      setProject((current) => ({
+        ...current,
+        uploadedReferences: mergeText(current.uploadedReferences, nextNote),
+        references: mergeText(current.references, `Uploaded reference files: ${fileList}`),
+        topic: current.topic || current.title || topicInput
+      }));
+      clearArtifacts();
+      setRunLog((current) => [...current, logEntry('Sources', `Uploaded ${files.length} reference file(s): ${fileList}.`)]);
+    } catch (uploadError) {
+      setError(readError(uploadError));
+    } finally {
+      event.target.value = '';
+      setStatus('idle');
+    }
+  }
+
   function clearArtifacts() {
     setResult(null);
     updatePdfUrl('');
@@ -330,6 +370,24 @@ function App() {
       anchor.click();
       if (!pdfUrl) URL.revokeObjectURL(href);
       setRunLog((current) => [...current, logEntry('Export', 'Downloaded proposal.pdf.')]);
+    } catch (requestError) {
+      setError(readError(requestError));
+    } finally {
+      setStatus('idle');
+    }
+  }
+
+  async function openPdfPreview() {
+    if (!result?.proposalLatex) return;
+
+    setStatus('exporting');
+    setError('');
+
+    try {
+      const href = pdfUrl || (await exportPdfUrl(result.proposalLatex, project.title || 'proposal'));
+      window.open(href, '_blank', 'noopener,noreferrer');
+      if (!pdfUrl) updatePdfUrl(href);
+      setRunLog((current) => [...current, logEntry('Preview', 'Opened proposal PDF preview in a new tab.')]);
     } catch (requestError) {
       setError(readError(requestError));
     } finally {
@@ -464,7 +522,6 @@ function App() {
           </div>
 
           {error ? <p className="error-banner">{error}</p> : null}
-
 
           <div className="workflow-grid" aria-label="Workflow stages">
             {STAGES.map(([number, title, description], index) => (
@@ -641,6 +698,44 @@ function App() {
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
               </label>
+              <div className="language-controls">
+                <label>
+                  Target Language
+                  <input
+                    value={project.targetLanguage || 'English'}
+                    onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
+                    placeholder="English, Spanish, Hindi, Chinese, etc."
+                  />
+                </label>
+                <label>
+                  Translation Model / Engine
+                  <input
+                    value={project.translationModel || ''}
+                    onChange={(event) => updateProjectField('translationModel', event.target.value)}
+                    placeholder="Optional: DeepL, human review, or api:gemini-model-id"
+                  />
+                </label>
+              </div>
+              <section className="reference-upload-card">
+                <div>
+                  <h3>Upload Reference Papers</h3>
+                  <p>
+                    Add PDFs, BibTeX/RIS files, or text notes. Text-like files are copied into the reference notes; PDF
+                    filenames are recorded so you can paste abstracts or key excerpts below.
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.bib,.ris,.csv,.tex"
+                  onChange={uploadReferenceFiles}
+                  disabled={status !== 'idle'}
+                />
+              </section>
+              <p className="override-help">
+                Every field below is editable: keep the generated text, replace it with your own material, or add override
+                instructions that the agent must respect when drafting.
+              </p>
               {PROJECT_FIELDS.map(([field, label]) => (
                 <label key={field}>
                   {label}
@@ -690,6 +785,10 @@ function App() {
                   <Download size={17} aria-hidden="true" />
                   LaTeX
                 </button>
+                <button className="secondary" type="button" disabled={!result?.proposalLatex || status !== 'idle'} onClick={openPdfPreview}>
+                  {status === 'exporting' ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}
+                  Open Preview
+                </button>
                 <button
                   className="primary"
                   type="button"
@@ -723,6 +822,39 @@ function App() {
       </section>
     </main>
   );
+}
+
+async function readReferenceFile(file) {
+  const header = `Reference file: ${file.name} (${file.type || 'unknown type'}, ${formatBytes(file.size)})`;
+  const textLike = /^(text\/|application\/(x-bibtex|json|xml|x-research-info-systems))/i.test(file.type)
+    || /\.(txt|md|bib|ris|csv|tex)$/i.test(file.name);
+
+  if (!textLike) {
+    return `${header}
+PDF or binary upload recorded. Paste the abstract, citation, or important excerpts here if text extraction is needed.`;
+  }
+
+  const text = await file.text();
+  const trimmed = text.trim().slice(0, 12000);
+  return `${header}
+${trimmed || 'File was empty.'}`;
+}
+
+function mergeText(current, addition) {
+  const base = String(current || '').trim();
+  const next = String(addition || '').trim();
+  if (!next) return base;
+  if (!base) return next;
+  return `${base}
+
+${next}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function postJson(url, body) {
@@ -766,9 +898,17 @@ function renderArtifact(activeTab, result, pdfUrl) {
 
   if (activeTab === 'pdf') {
     return pdfUrl ? (
-      <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
+      <div className="pdf-preview-frame">
+        <object className="pdf-preview" data={pdfUrl} type="application/pdf" aria-label="Compiled proposal PDF preview">
+          <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
+          <p className="pdf-preview-help">
+            Your browser did not render the PDF inline. Use Open Preview to view it in a full browser tab, or download the
+            PDF if your VS Code preview blocks embedded PDF files.
+          </p>
+        </object>
+      </div>
     ) : (
-      <EmptyState text="PDF preview is rendering." />
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     );
   }
 

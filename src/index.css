@@ -517,6 +517,59 @@ textarea:focus {
   min-height: 86px;
 }
 
+.language-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reference-upload-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e3e7;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.reference-upload-card h3 {
+  margin: 0;
+  color: #26363b;
+  font-size: 0.95rem;
+}
+
+.reference-upload-card p {
+  margin: 5px 0 0;
+  color: #536066;
+  font-size: 0.83rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.reference-upload-card input[type='file'] {
+  border: 1px dashed #9fb4bc;
+  background: #f7fbfc;
+  cursor: pointer;
+}
+
+.override-help {
+  margin: 0;
+  border: 1px solid #d8e3e7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f7fbfc;
+  color: #536066;
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+@media (max-width: 920px) {
+  .language-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 .agent-console-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(320px, 1fr));
@@ -868,4 +921,19 @@ th {
   .artifact-summary {
     grid-template-columns: 1fr;
   }
+}
+
+.pdf-preview-frame {
+  border: 1px solid #cbd7dc;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.pdf-preview-help {
+  margin: 0;
+  padding: 18px;
+  color: #536066;
+  font-weight: 750;
+  line-height: 1.45;
 }
