@@ -58,6 +58,8 @@ Open:
 http://127.0.0.1:5174
 ```
 
+If you are using VS Code's Simple Browser and the embedded PDF panel stays blank, click **Open Preview** in the app or open the same URL in Chrome/Edge/Firefox. Some VS Code webviews block inline PDF rendering even when PDF export works.
+
 We encourage students to start with the [Gemini API free tier](https://ai.google.dev/gemini-api/docs/pricing). If the free tier is not enough for your project, email the TA at <yfu093@ucr.edu> to request additional API access. Keep all API keys out of GitHub and document your setup.
 
 ## Resources
@@ -90,6 +92,8 @@ Submit:
 - 5-minute presentation video or link;
 - mandatory in-person presentation for demonstration and feedback;
 - optional screenshots or interaction trace.
+
+A ready-to-use Phase 1 demo artifact and recording outline is available at [docs/stage_1_demo_artifact.md](docs/stage_1_demo_artifact.md), including professor-feedback updates for a Connected Papers-style source-grounding loop, researcher override fields, and optional target-language/translation-model controls.
 
 Details: [docs/stage_1_workflow_design.md](docs/stage_1_workflow_design.md)
 

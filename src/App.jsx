@@ -24,7 +24,9 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Evaluation plan
 - Risks and mitigation
 - Resources or budget
-- References, assumptions, or source notes`;
+- References, assumptions, or source notes
+- Researcher-provided material or override notes when available
+- Target language or translation instructions when requested`;
 
 const EMPTY_PROJECT = {
   title: '',
@@ -35,6 +37,10 @@ const EMPTY_PROJECT = {
   evaluation: '',
   resources: '',
   references: '',
+  researcherMaterial: '',
+  overrideInstructions: '',
+  targetLanguage: 'English',
+  translationModel: '',
   requirements: DEFAULT_REQUIREMENTS
 };
 
@@ -44,7 +50,9 @@ const PROJECT_FIELDS = [
   ['evaluation', 'Evaluation'],
   ['timeline', 'Timeline'],
   ['resources', 'Resources'],
-  ['references', 'Sources']
+  ['references', 'Sources'],
+  ['researcherMaterial', 'Researcher Material'],
+  ['overrideInstructions', 'Override Instructions']
 ];
 
 const STAGES = [
@@ -63,6 +71,58 @@ const TABS = [
 ];
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
+
+const PHASE_ONE_CHECKLIST = [
+  'Show a working prototype that turns a rough idea into structured proposal fields.',
+  'Explain the five workflow stages and where student feedback changes the state.',
+  'Walk through one user journey: start idea, accept suggestions, answer a question, generate artifacts.',
+  'Name the proposal-writing and agent-workflow sources that informed the design.',
+  'Close with Stage 2 refinements: stronger source grounding, saved run evidence, and revision loops.',
+  'Show how the next version can use a Connected Papers-style citation graph to reduce noisy related work.',
+  'Demonstrate that students can override generated content with their own notes, paper summaries, or requirements.',
+  'Optionally set a target language and translation model for multilingual proposal drafts.'
+];
+
+const LITERATURE_GROUNDING_STEPS = [
+  ['Seed', 'Start from one trusted PDF or paper title that anchors the proposal topic.'],
+  ['Graph', 'Use Connected Papers-style exploration to inspect cited, citing, and strongly related papers.'],
+  ['Rank', 'Prioritize high-impact or highly connected papers instead of retrieving every search result.'],
+  ['Verify', 'Student reviews the graph, screenshots evidence, and rejects fishy or weakly related papers.'],
+  ['Retrieve', 'Use the accepted paper list as grounded context for related work, novelty, and evaluation claims.']
+];
+
+const RESEARCH_SOURCES = [
+  {
+    title: 'NSF Proposal & Award Policies and Procedures Guide',
+    focus: 'Required proposal sections, merit-review criteria, broader impacts, and responsible source documentation.',
+    url: 'https://www.nsf.gov/policies/pappg'
+  },
+  {
+    title: 'Purdue OWL grant writing guidance',
+    focus: 'Problem framing, audience awareness, objectives, methods, evaluation, and budget logic.',
+    url: 'https://owl.purdue.edu/owl/subject_specific_writing/professional_technical_writing/grant_writing/index.html'
+  },
+  {
+    title: 'Google PAIR People + AI Guidebook',
+    focus: 'Human-in-the-loop checkpoints, confidence communication, feedback collection, and user control.',
+    url: 'https://pair.withgoogle.com/guidebook/'
+  },
+  {
+    title: 'Connected Papers',
+    focus: 'Citation-graph exploration for discovering influential prior work around a seed paper.',
+    url: 'https://www.connectedpapers.com/'
+  }
+];
+
+const VIDEO_SCRIPT = [
+  ['0:00-0:30', 'Motivation', 'Students often have a rough idea but miss gap, evaluation, timeline, and risk details.'],
+  ['0:30-1:30', 'Prototype tour', 'Show the rough-idea input, suggestion cards, decision cards, accepted project state, and saved memory.'],
+  ['1:30-2:45', 'Example journey', 'Run the sample topic, accept one field, add researcher material, set a target language if needed, then generate artifacts.'],
+  ['2:45-3:35', 'Workflow rationale', 'Explain extract, decide, source-ground, assemble, draft, and review as a proposal-quality feedback loop.'],
+  ['3:35-4:25', 'Source grounding', 'Explain the professor feedback: use a Connected Papers-style graph to rank relevant papers before retrieval.'],
+  ['4:25-5:00', 'Stage 2 plan', 'Promise graph screenshots, accepted-paper lists, stronger citations, revision history, and a clearer evaluator rubric.']
+];
+
 
 function App() {
   const [topicInput, setTopicInput] = useState('');
@@ -337,6 +397,24 @@ function App() {
     }
   }
 
+  async function openPdfPreview() {
+    if (!result?.proposalLatex) return;
+
+    setStatus('exporting');
+    setError('');
+
+    try {
+      const href = pdfUrl || (await exportPdfUrl(result.proposalLatex, project.title || 'proposal'));
+      window.open(href, '_blank', 'noopener,noreferrer');
+      if (!pdfUrl) updatePdfUrl(href);
+      setRunLog((current) => [...current, logEntry('Preview', 'Opened proposal PDF preview in a new tab.')]);
+    } catch (requestError) {
+      setError(readError(requestError));
+    } finally {
+      setStatus('idle');
+    }
+  }
+
   function saveMemory({ silent = false } = {}) {
     const snapshot = {
       savedAt: new Date().toISOString(),
@@ -465,6 +543,70 @@ function App() {
 
           {error ? <p className="error-banner">{error}</p> : null}
 
+          <section className="phase-one-kit" aria-label="Phase 1 presentation support">
+            <div className="phase-card phase-card-primary">
+              <span className="eyebrow">Phase 1 Ready</span>
+              <h2>5-minute workflow design demo</h2>
+              <p>
+                Use this prototype to show how a student and agent transform a rough research idea into structured proposal
+                state, draft artifacts, and review evidence before Stage 2 refinement.
+              </p>
+              <ul className="phase-checklist">
+                {PHASE_ONE_CHECKLIST.map((item) => (
+                  <li key={item}>
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="phase-card">
+              <span className="eyebrow">External research</span>
+              <h2>Sources to cite in the video</h2>
+              <div className="source-stack">
+                {RESEARCH_SOURCES.map((source) => (
+                  <a href={source.url} target="_blank" rel="noreferrer" key={source.title}>
+                    <strong>{source.title}</strong>
+                    <span>{source.focus}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            <div className="phase-card grounding-card">
+              <span className="eyebrow">Professor feedback</span>
+              <h2>Citation-graph grounding loop</h2>
+              <p>
+                Stage 2 should reduce noisy related work by starting from a trusted seed paper, exploring a paper graph,
+                and letting the student approve the most relevant papers before the agent retrieves or cites them.
+              </p>
+              <ol className="grounding-steps">
+                {LITERATURE_GROUNDING_STEPS.map(([label, text]) => (
+                  <li key={label}>
+                    <strong>{label}</strong>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+
+          <section className="video-script-panel" aria-label="Phase 1 video outline">
+            <div>
+              <span className="eyebrow">Recording outline</span>
+              <h2>Suggested Phase 1 video flow</h2>
+            </div>
+            <ol>
+              {VIDEO_SCRIPT.map(([time, title, description]) => (
+                <li key={time}>
+                  <strong>{time}</strong>
+                  <span>{title}</span>
+                  <p>{description}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
 
           <div className="workflow-grid" aria-label="Workflow stages">
             {STAGES.map(([number, title, description], index) => (
@@ -641,6 +783,28 @@ function App() {
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
               </label>
+              <div className="language-controls">
+                <label>
+                  Target Language
+                  <input
+                    value={project.targetLanguage || 'English'}
+                    onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
+                    placeholder="English, Spanish, Hindi, Chinese, etc."
+                  />
+                </label>
+                <label>
+                  Translation Model / Engine
+                  <input
+                    value={project.translationModel || ''}
+                    onChange={(event) => updateProjectField('translationModel', event.target.value)}
+                    placeholder="Optional: DeepL, human review, or api:gemini-model-id"
+                  />
+                </label>
+              </div>
+              <p className="override-help">
+                Every field below is editable: keep the generated text, replace it with your own material, or add override
+                instructions that the agent must respect when drafting.
+              </p>
               {PROJECT_FIELDS.map(([field, label]) => (
                 <label key={field}>
                   {label}
@@ -689,6 +853,10 @@ function App() {
                 <button className="secondary" type="button" disabled={!result?.proposalLatex} onClick={downloadLatex}>
                   <Download size={17} aria-hidden="true" />
                   LaTeX
+                </button>
+                <button className="secondary" type="button" disabled={!result?.proposalLatex || status !== 'idle'} onClick={openPdfPreview}>
+                  {status === 'exporting' ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}
+                  Open Preview
                 </button>
                 <button
                   className="primary"
@@ -766,9 +934,17 @@ function renderArtifact(activeTab, result, pdfUrl) {
 
   if (activeTab === 'pdf') {
     return pdfUrl ? (
-      <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
+      <div className="pdf-preview-frame">
+        <object className="pdf-preview" data={pdfUrl} type="application/pdf" aria-label="Compiled proposal PDF preview">
+          <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
+          <p className="pdf-preview-help">
+            Your browser did not render the PDF inline. Use Open Preview to view it in a full browser tab, or download the
+            PDF if your VS Code preview blocks embedded PDF files.
+          </p>
+        </object>
+      </div>
     ) : (
-      <EmptyState text="PDF preview is rendering." />
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     );
   }
 
