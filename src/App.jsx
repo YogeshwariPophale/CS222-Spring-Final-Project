@@ -1076,7 +1076,7 @@ async function exportPdfUrl(proposalLatex, title) {
   return URL.createObjectURL(blob);
 }
 
-function renderArtifact(activeTab, result, pdfUrl, analysis) {
+function renderArtifact(activeTab, result, pdfUrl) {
   if (!result) {
     return <EmptyState text="Proposal artifacts appear after Generate Proposal." />;
   }
@@ -1094,6 +1094,7 @@ function renderArtifact(activeTab, result, pdfUrl, analysis) {
       </div>
     ) : (
       <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
+<<<<<<< Updated upstream
     ) : (
       <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     ) : (
@@ -1163,6 +1164,8 @@ function renderArtifact(activeTab, result, pdfUrl, analysis) {
       </div>
     ) : (
       <EmptyState text="Analysis not available." />
+=======
+>>>>>>> Stashed changes
     );
   }
 
