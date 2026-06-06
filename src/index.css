@@ -517,6 +517,30 @@ textarea:focus {
   min-height: 86px;
 }
 
+.language-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.override-help {
+  margin: 0;
+  border: 1px solid #d8e3e7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f7fbfc;
+  color: #536066;
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+@media (max-width: 920px) {
+  .language-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 .agent-console-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(320px, 1fr));
@@ -870,6 +894,211 @@ th {
   }
 }
 
+.phase-one-kit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.phase-card,
+.video-script-panel {
+  border: 1px solid #cbd7dc;
+  border-radius: 12px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(31, 45, 50, 0.06);
+}
+
+.phase-card-primary {
+  background: linear-gradient(135deg, #ffffff 0%, #eff8f4 100%);
+}
+
+.eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #e7eff2;
+  color: #39535c;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.phase-card h2,
+.video-script-panel h2 {
+  margin-top: 8px;
+  color: #1f2d32;
+  font-size: 1.12rem;
+}
+
+.phase-card p {
+  margin: 10px 0 0;
+  color: #465257;
+  line-height: 1.45;
+}
+
+.phase-checklist,
+.source-stack,
+.video-script-panel ol {
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.phase-checklist {
+  display: grid;
+  gap: 9px;
+  list-style: none;
+}
+
+.phase-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #39474d;
+  font-weight: 750;
+  line-height: 1.36;
+}
+
+.phase-checklist svg {
+  flex: 0 0 auto;
+  color: #2f6f62;
+}
+
+.source-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.source-stack a {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8e3e7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdfd;
+  color: inherit;
+  text-decoration: none;
+}
+
+.source-stack a:hover {
+  border-color: #8eb8aa;
+  background: #edf8f4;
+}
+
+.source-stack strong {
+  color: #28584b;
+  font-size: 0.9rem;
+}
+
+.source-stack span {
+  color: #5f6c72;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.grounding-card {
+  background: linear-gradient(135deg, #ffffff 0%, #fff8eb 100%);
+}
+
+.grounding-steps {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grounding-steps li {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 8px;
+  border: 1px solid #eadbbd;
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.grounding-steps strong {
+  color: #8a4a12;
+  font-size: 0.8rem;
+  font-weight: 950;
+}
+
+.grounding-steps span {
+  color: #4e5960;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.video-script-panel {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.video-script-panel ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.video-script-panel li {
+  border-left: 4px solid #2f6f62;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  background: #fbfdfd;
+}
+
+.video-script-panel li strong {
+  display: block;
+  color: #28584b;
+  font-size: 0.82rem;
+}
+
+.video-script-panel li span {
+  display: block;
+  margin-top: 3px;
+  color: #26363b;
+  font-weight: 900;
+}
+
+.video-script-panel li p {
+  margin: 5px 0 0;
+  color: #5f6c72;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 920px) {
+  .phase-one-kit,
+  .video-script-panel,
+  .video-script-panel ol {
+    display: block;
+  }
+
+  .phase-card,
+  .video-script-panel li {
+    margin-top: 12px;
+  }
+}
+
+.pdf-preview-frame {
+  border: 1px solid #cbd7dc;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.pdf-preview-help {
+  margin: 0;
+  padding: 18px;
+  color: #536066;
+  font-weight: 750;
+  line-height: 1.45;
 /* Analysis Panel Styles */
 .analysis-wrap {
   display: flex;
