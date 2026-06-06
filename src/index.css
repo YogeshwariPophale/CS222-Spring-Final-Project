@@ -523,6 +523,35 @@ textarea:focus {
   gap: 10px;
 }
 
+.reference-upload-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8e3e7;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.reference-upload-card h3 {
+  margin: 0;
+  color: #26363b;
+  font-size: 0.95rem;
+}
+
+.reference-upload-card p {
+  margin: 5px 0 0;
+  color: #536066;
+  font-size: 0.83rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.reference-upload-card input[type='file'] {
+  border: 1px dashed #9fb4bc;
+  background: #f7fbfc;
+  cursor: pointer;
+}
+
 .override-help {
   margin: 0;
   border: 1px solid #d8e3e7;

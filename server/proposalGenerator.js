@@ -11,6 +11,7 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Risks and mitigation
 - Resources or budget
 - References, assumptions, or source notes
+- Uploaded reference paper notes when available
 - Researcher-provided material or override notes when available
 - Target language or translation instructions when requested`;
 
@@ -23,6 +24,7 @@ const EMPTY_PROJECT_FOR_SERVER = {
   evaluation: '',
   resources: '',
   references: '',
+  uploadedReferences: '',
   researcherMaterial: '',
   overrideInstructions: '',
   targetLanguage: 'English',
@@ -58,6 +60,7 @@ Rules:
 - Include a concrete agent workflow when the method involves an agent.
 - Include at least one LaTeX-native figure, diagram, workflow chart, or architecture sketch with a caption.
 - Do not invent citations. Use source notes or assumptions when sources are missing.
+- Treat uploadedReferences, researcherMaterial, and overrideInstructions as higher priority than generated suggestions.
 - Treat researcherMaterial and overrideInstructions as higher priority than generated suggestions.
 - If targetLanguage is not English, write the proposal in that target language while keeping LaTeX commands compile-safe.
 - If translationModel is provided, mention it in the evaluation report as the intended translation/review model or engine.`;
@@ -74,6 +77,7 @@ Return strict JSON:
     "evaluation": "",
     "resources": "",
     "references": "",
+    "uploadedReferences": "",
     "researcherMaterial": "",
     "overrideInstructions": "",
     "targetLanguage": "English",
@@ -81,6 +85,7 @@ Return strict JSON:
   },
   "fieldSuggestions": [
     {
+      "field": "title | problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "field": "title | problem | method | timeline | evaluation | resources | references | researcherMaterial | overrideInstructions",
       "label": "human-readable label",
       "value": "specific suggested content",
@@ -92,6 +97,7 @@ Return strict JSON:
     {
       "id": "short-stable-id",
       "title": "decision title",
+      "field": "problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "field": "problem | method | timeline | evaluation | resources | references | researcherMaterial | overrideInstructions",
       "question": "context-aware decision prompt",
       "options": [
@@ -105,6 +111,7 @@ Return strict JSON:
   ],
   "questions": [
     {
+      "field": "problem | method | evaluation | timeline | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "field": "problem | method | evaluation | timeline | resources | references | researcherMaterial | overrideInstructions",
       "question": "one concise question",
       "reason": "why this answer matters",
@@ -437,6 +444,7 @@ function buildLocalProposalLatex(project) {
   const timeline = project.timeline || 'Phase 1 literature and requirement review; Phase 2 workflow and method design; Phase 3 prototype or study setup; Phase 4 evaluation and analysis; Phase 5 final proposal revision and source notes.';
   const resources = project.resources || 'This browser app, a local Node API service, an optional LLM API key, proposal-writing references, and source notes for unsupported claims.';
   const references = project.references || 'Course proposal requirements and demo scaffold. Additional claims are treated as assumptions.';
+  const uploadedReferences = project.uploadedReferences || 'No reference paper uploads were provided. Paste extracted abstracts, BibTeX, or citation notes here for stronger grounding.';
   const researcherMaterial = project.researcherMaterial || 'No researcher-provided source material was entered. Generated content should be reviewed by the student.';
   const overrideInstructions = project.overrideInstructions || 'No special override instructions were provided; generated sections may be revised by the student.';
   const targetLanguage = project.targetLanguage || 'English';
@@ -505,6 +513,9 @@ Test cases include a complete idea, a missing-information idea, a requirement-ch
 \item Research scope becomes too broad: narrow the contribution, milestones, and evaluation criteria before drafting.
 \item Target-language wording is inaccurate: run a translation-model or human review pass and keep technical terms consistent.
 \end{itemize}
+
+\section{Reference Uploads and Researcher Overrides}
+\textbf{Uploaded reference notes:} ${latexParagraph(uploadedReferences)}
 
 \section{Researcher Overrides and Source Material}
 \textbf{Researcher-provided material:} ${latexParagraph(researcherMaterial)}
@@ -837,6 +848,7 @@ function labelForField(field) {
     evaluation: 'Evaluation Plan',
     resources: 'Resources',
     references: 'Sources / Assumptions',
+    uploadedReferences: 'Uploaded Reference Notes',
     researcherMaterial: 'Researcher Material',
     overrideInstructions: 'Override Instructions',
     targetLanguage: 'Target Language',
@@ -855,6 +867,7 @@ function summarizeProjectInput(project) {
     ['Evaluation', project.evaluation],
     ['Resources', project.resources],
     ['References', project.references],
+    ['Uploaded Reference Notes', project.uploadedReferences],
     ['Researcher Material', project.researcherMaterial],
     ['Override Instructions', project.overrideInstructions],
     ['Target Language', project.targetLanguage],
@@ -943,6 +956,7 @@ function normalizePayload(payload) {
     evaluation: clean(payload.evaluation),
     resources: clean(payload.resources),
     references: clean(payload.references),
+    uploadedReferences: clean(payload.uploadedReferences),
     researcherMaterial: clean(payload.researcherMaterial),
     overrideInstructions: clean(payload.overrideInstructions),
     targetLanguage: clean(payload.targetLanguage) || 'English',
@@ -973,6 +987,11 @@ function findRequirementEvidence(requirement, project) {
   if (/evaluation|metric|test/.test(text) && project.evaluation) return project.evaluation;
   if (/risk|mitigation/.test(text)) return 'Fallback draft includes risks and mitigations.';
   if (/resource|budget|tool/.test(text) && project.resources) return project.resources;
+  if (/reference|assumption|source/.test(text) && (project.references || project.uploadedReferences)) {
+    return project.references || project.uploadedReferences;
+  }
+  if (/upload|paper|researcher|override|material|provided/.test(text) && (project.uploadedReferences || project.researcherMaterial || project.overrideInstructions)) {
+    return project.uploadedReferences || project.researcherMaterial || project.overrideInstructions;
   if (/reference|assumption|source/.test(text) && project.references) return project.references;
   if (/researcher|override|material|provided/.test(text) && (project.researcherMaterial || project.overrideInstructions)) {
     return project.researcherMaterial || project.overrideInstructions;

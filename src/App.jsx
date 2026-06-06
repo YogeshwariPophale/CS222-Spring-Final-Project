@@ -25,6 +25,7 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Risks and mitigation
 - Resources or budget
 - References, assumptions, or source notes
+- Uploaded reference paper notes when available
 - Researcher-provided material or override notes when available
 - Target language or translation instructions when requested`;
 
@@ -37,6 +38,7 @@ const EMPTY_PROJECT = {
   evaluation: '',
   resources: '',
   references: '',
+  uploadedReferences: '',
   researcherMaterial: '',
   overrideInstructions: '',
   targetLanguage: 'English',
@@ -51,6 +53,7 @@ const PROJECT_FIELDS = [
   ['timeline', 'Timeline'],
   ['resources', 'Resources'],
   ['references', 'Sources'],
+  ['uploadedReferences', 'Uploaded Reference Notes'],
   ['researcherMaterial', 'Researcher Material'],
   ['overrideInstructions', 'Override Instructions']
 ];
@@ -352,6 +355,34 @@ function App() {
       topic: current.topic || current.title || topicInput
     }));
     clearArtifacts();
+  }
+
+  async function uploadReferenceFiles(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    setStatus('uploading');
+    setError('');
+
+    try {
+      const notes = await Promise.all(files.map(readReferenceFile));
+      const fileList = files.map((file) => file.name).join(', ');
+      const nextNote = notes.join('\n\n');
+
+      setProject((current) => ({
+        ...current,
+        uploadedReferences: mergeText(current.uploadedReferences, nextNote),
+        references: mergeText(current.references, `Uploaded reference files: ${fileList}`),
+        topic: current.topic || current.title || topicInput
+      }));
+      clearArtifacts();
+      setRunLog((current) => [...current, logEntry('Sources', `Uploaded ${files.length} reference file(s): ${fileList}.`)]);
+    } catch (uploadError) {
+      setError(readError(uploadError));
+    } finally {
+      event.target.value = '';
+      setStatus('idle');
+    }
   }
 
   function clearArtifacts() {
@@ -831,6 +862,22 @@ function App() {
                   />
                 </label>
               </div>
+              <section className="reference-upload-card">
+                <div>
+                  <h3>Upload Reference Papers</h3>
+                  <p>
+                    Add PDFs, BibTeX/RIS files, or text notes. Text-like files are copied into the reference notes; PDF
+                    filenames are recorded so you can paste abstracts or key excerpts below.
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.bib,.ris,.csv,.tex"
+                  onChange={uploadReferenceFiles}
+                  disabled={status !== 'idle'}
+                />
+              </section>
               <p className="override-help">
                 Every field below is editable: keep the generated text, replace it with your own material, or add override
                 instructions that the agent must respect when drafting.
@@ -923,6 +970,38 @@ function App() {
   );
 }
 
+async function readReferenceFile(file) {
+  const header = `Reference file: ${file.name} (${file.type || 'unknown type'}, ${formatBytes(file.size)})`;
+  const textLike = /^(text\/|application\/(x-bibtex|json|xml|x-research-info-systems))/i.test(file.type)
+    || /\.(txt|md|bib|ris|csv|tex)$/i.test(file.name);
+
+  if (!textLike) {
+    return `${header}
+PDF or binary upload recorded. Paste the abstract, citation, or important excerpts here if text extraction is needed.`;
+  }
+
+  const text = await file.text();
+  const trimmed = text.trim().slice(0, 12000);
+  return `${header}
+${trimmed || 'File was empty.'}`;
+}
+
+function mergeText(current, addition) {
+  const base = String(current || '').trim();
+  const next = String(addition || '').trim();
+  if (!next) return base;
+  if (!base) return next;
+  return `${base}
+
+${next}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 const API_BASE = typeof import.meta.env !== 'undefined' && import.meta.env.VITE_API_URL 
   ? import.meta.env.VITE_API_URL 
   : (() => {
@@ -984,6 +1063,8 @@ function renderArtifact(activeTab, result, pdfUrl, analysis) {
           </p>
         </object>
       </div>
+    ) : (
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     ) : (
       <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     );
