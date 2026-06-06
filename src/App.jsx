@@ -76,6 +76,25 @@ const TABS = [
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
 
+const TARGET_LANGUAGE_OPTIONS = [
+  'English',
+  'Spanish',
+  'Hindi',
+  'Chinese',
+  'French',
+  'German',
+  'Arabic',
+  'Portuguese',
+  'Japanese',
+  'Korean',
+  'Italian',
+  'Russian',
+  'Bengali',
+  'Urdu',
+  'Tamil',
+  'Telugu',
+  'Marathi',
+  'Gujarati'
 const PHASE_ONE_CHECKLIST = [
   'Show a working prototype that turns a rough idea into structured proposal fields.',
   'Explain the five workflow stages and where student feedback changes the state.',
@@ -847,6 +866,16 @@ function App() {
               <div className="language-controls">
                 <label>
                   Target Language
+                  <select
+                    value={project.targetLanguage || 'English'}
+                    onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
+                  >
+                    {TARGET_LANGUAGE_OPTIONS.map((language) => (
+                      <option value={language} key={language}>
+                        {language}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     value={project.targetLanguage || 'English'}
                     onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
@@ -1063,6 +1092,8 @@ function renderArtifact(activeTab, result, pdfUrl, analysis) {
           </p>
         </object>
       </div>
+    ) : (
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     ) : (
       <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
     ) : (

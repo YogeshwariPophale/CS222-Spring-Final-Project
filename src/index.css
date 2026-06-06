@@ -20,6 +20,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -106,6 +107,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #c7d2d6;
@@ -122,6 +124,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: #2f6f62;
   outline: 3px solid rgba(47, 111, 98, 0.16);
@@ -509,6 +512,7 @@ textarea:focus {
 }
 
 .state-panel input,
+.state-panel select,
 .state-panel textarea {
   border-color: #d4dee2;
 }
