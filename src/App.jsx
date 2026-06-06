@@ -73,8 +73,6 @@ const TABS = [
   ['evaluation', ListChecks, 'Review']
 ];
 
-const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
-
 const TARGET_LANGUAGE_OPTIONS = [
   'English',
   'Spanish',
@@ -96,6 +94,7 @@ const TARGET_LANGUAGE_OPTIONS = [
   'Gujarati'
 ];
 
+const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
 
 function App() {
   const [topicInput, setTopicInput] = useState('');
@@ -249,6 +248,7 @@ function App() {
         topic: project.topic || project.title,
         requirements: DEFAULT_REQUIREMENTS
       });
+
       const nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
 
       setResult(data);
@@ -748,6 +748,7 @@ function App() {
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
               </label>
+
               <div className="language-controls">
                 <label>
                   Target Language
@@ -762,6 +763,7 @@ function App() {
                     ))}
                   </select>
                 </label>
+
                 <label>
                   Translation Model / Engine
                   <input
@@ -771,6 +773,7 @@ function App() {
                   />
                 </label>
               </div>
+
               <section className="reference-upload-card">
                 <div>
                   <h3>Upload Reference Papers</h3>
@@ -787,16 +790,19 @@ function App() {
                   disabled={status !== 'idle'}
                 />
               </section>
+
               <p className="override-help">
                 Every field below is editable: keep the generated text, replace it with your own material, or add override
                 instructions that the agent must respect when drafting.
               </p>
+
               {PROJECT_FIELDS.map(([field, label]) => (
                 <label key={field}>
                   {label}
                   <textarea value={project[field] || ''} onChange={(event) => updateProjectField(field, event.target.value)} />
                 </label>
               ))}
+
               <button className="primary" disabled={!project.title || status !== 'idle'} onClick={generateProposal} type="button">
                 {status === 'drafting' ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
                 Generate Proposal
@@ -825,14 +831,17 @@ function App() {
                     </button>
                   ))}
                 </nav>
+
                 <button className="secondary" type="button" disabled={!result?.proposalLatex} onClick={downloadLatex}>
                   <Download size={17} aria-hidden="true" />
                   LaTeX
                 </button>
+
                 <button className="secondary" type="button" disabled={!result?.proposalLatex || status !== 'idle'} onClick={openPdfPreview}>
                   {status === 'exporting' ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}
                   Open Preview
                 </button>
+
                 <button
                   className="primary"
                   type="button"
@@ -887,8 +896,10 @@ ${trimmed || 'File was empty.'}`;
 function mergeText(current, addition) {
   const base = String(current || '').trim();
   const next = String(addition || '').trim();
+
   if (!next) return base;
   if (!base) return next;
+
   return `${base}
 
 ${next}`;
@@ -907,6 +918,7 @@ async function postJson(url, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+
   const data = await response.json();
 
   if (!response.ok) {
@@ -1017,6 +1029,7 @@ function stageStatus(index, fieldSuggestions, decisions, project, result) {
   if (index === 1 && decisions.length) return 'status-complete';
   if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'status-complete';
   if (index >= 3 && result) return 'status-complete';
+
   return 'status-waiting';
 }
 
@@ -1025,6 +1038,7 @@ function stageLabel(index, fieldSuggestions, decisions, project, result) {
   if (index === 1 && decisions.length) return 'Shown';
   if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'Shown';
   if (index >= 3 && result) return 'Shown';
+
   return 'Ready';
 }
 

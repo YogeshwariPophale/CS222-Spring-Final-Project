@@ -61,6 +61,7 @@ Rules:
 - Include at least one LaTeX-native figure, diagram, workflow chart, or architecture sketch with a caption.
 - Do not invent citations. Use source notes or assumptions when sources are missing.
 - Treat uploadedReferences, researcherMaterial, and overrideInstructions as higher priority than generated suggestions.
+- Treat researcherMaterial and overrideInstructions as higher priority than generated suggestions.
 - If targetLanguage is not English, write the proposal in that target language while keeping LaTeX commands compile-safe.
 - If translationModel is provided, mention it in the evaluation report as the intended translation/review model or engine.`;
 
@@ -85,6 +86,7 @@ Return strict JSON:
   "fieldSuggestions": [
     {
       "field": "title | problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
+      "field": "title | problem | method | timeline | evaluation | resources | references | researcherMaterial | overrideInstructions",
       "label": "human-readable label",
       "value": "specific suggested content",
       "confidence": "High | Medium | Low",
@@ -96,6 +98,7 @@ Return strict JSON:
       "id": "short-stable-id",
       "title": "decision title",
       "field": "problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
+      "field": "problem | method | timeline | evaluation | resources | references | researcherMaterial | overrideInstructions",
       "question": "context-aware decision prompt",
       "options": [
         {
@@ -109,6 +112,7 @@ Return strict JSON:
   "questions": [
     {
       "field": "problem | method | evaluation | timeline | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
+      "field": "problem | method | evaluation | timeline | resources | references | researcherMaterial | overrideInstructions",
       "question": "one concise question",
       "reason": "why this answer matters",
       "priority": "High | Medium | Low"
@@ -314,6 +318,9 @@ async function callModel({ systemPrompt, payload, model, temperature }) {
 async function callGemini({ systemPrompt, payload, model, temperature }) {
   const baseUrl = clean(process.env.LLM_API_URL) || 'https://generativelanguage.googleapis.com/v1beta';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(model)}:generateContent`;
+  
+  console.log('[Gemini API] Calling endpoint:', endpoint);
+  
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -340,18 +347,23 @@ async function callGemini({ systemPrompt, payload, model, temperature }) {
   const data = await response.json();
 
   if (!response.ok) {
+    console.error('[Gemini API] Error response:', JSON.stringify(data, null, 2));
     throw new Error(data?.error?.message || `Gemini API returned ${response.status}`);
   }
 
+  console.log('[Gemini API] Success - received response');
+  
   const content = data?.candidates?.[0]?.content?.parts
     ?.map((part) => part.text)
     .filter(Boolean)
     .join('\n');
 
   if (!content) {
+    console.error('[Gemini API] No text content in response:', JSON.stringify(data, null, 2));
     throw new Error('Gemini API returned no text content.');
   }
 
+  console.log('[Gemini API] Content length:', content.length);
   return content;
 }
 
@@ -505,6 +517,7 @@ Test cases include a complete idea, a missing-information idea, a requirement-ch
 \section{Reference Uploads and Researcher Overrides}
 \textbf{Uploaded reference notes:} ${latexParagraph(uploadedReferences)}
 
+\section{Researcher Overrides and Source Material}
 \textbf{Researcher-provided material:} ${latexParagraph(researcherMaterial)}
 
 \textbf{Override instructions:} ${latexParagraph(overrideInstructions)}
@@ -979,6 +992,9 @@ function findRequirementEvidence(requirement, project) {
   }
   if (/upload|paper|researcher|override|material|provided/.test(text) && (project.uploadedReferences || project.researcherMaterial || project.overrideInstructions)) {
     return project.uploadedReferences || project.researcherMaterial || project.overrideInstructions;
+  if (/reference|assumption|source/.test(text) && project.references) return project.references;
+  if (/researcher|override|material|provided/.test(text) && (project.researcherMaterial || project.overrideInstructions)) {
+    return project.researcherMaterial || project.overrideInstructions;
   }
   if (/language|translation/.test(text) && project.targetLanguage) return `Target language: ${project.targetLanguage}`;
 
