@@ -70,7 +70,8 @@ const TABS = [
   ['pdf', FileText, 'PDF'],
   ['latex', FileText, 'LaTeX'],
   ['matrix', ClipboardCheck, 'Matrix'],
-  ['evaluation', ListChecks, 'Review']
+  ['evaluation', ListChecks, 'Review'],
+  ['analysis', Sparkles, 'Analysis']
 ];
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
@@ -94,6 +95,55 @@ const TARGET_LANGUAGE_OPTIONS = [
   'Telugu',
   'Marathi',
   'Gujarati'
+const PHASE_ONE_CHECKLIST = [
+  'Show a working prototype that turns a rough idea into structured proposal fields.',
+  'Explain the five workflow stages and where student feedback changes the state.',
+  'Walk through one user journey: start idea, accept suggestions, answer a question, generate artifacts.',
+  'Name the proposal-writing and agent-workflow sources that informed the design.',
+  'Close with Stage 2 refinements: stronger source grounding, saved run evidence, and revision loops.',
+  'Show how the next version can use a Connected Papers-style citation graph to reduce noisy related work.',
+  'Demonstrate that students can override generated content with their own notes, paper summaries, or requirements.',
+  'Optionally set a target language and translation model for multilingual proposal drafts.'
+];
+
+const LITERATURE_GROUNDING_STEPS = [
+  ['Seed', 'Start from one trusted PDF or paper title that anchors the proposal topic.'],
+  ['Graph', 'Use Connected Papers-style exploration to inspect cited, citing, and strongly related papers.'],
+  ['Rank', 'Prioritize high-impact or highly connected papers instead of retrieving every search result.'],
+  ['Verify', 'Student reviews the graph, screenshots evidence, and rejects fishy or weakly related papers.'],
+  ['Retrieve', 'Use the accepted paper list as grounded context for related work, novelty, and evaluation claims.']
+];
+
+const RESEARCH_SOURCES = [
+  {
+    title: 'NSF Proposal & Award Policies and Procedures Guide',
+    focus: 'Required proposal sections, merit-review criteria, broader impacts, and responsible source documentation.',
+    url: 'https://www.nsf.gov/policies/pappg'
+  },
+  {
+    title: 'Purdue OWL grant writing guidance',
+    focus: 'Problem framing, audience awareness, objectives, methods, evaluation, and budget logic.',
+    url: 'https://owl.purdue.edu/owl/subject_specific_writing/professional_technical_writing/grant_writing/index.html'
+  },
+  {
+    title: 'Google PAIR People + AI Guidebook',
+    focus: 'Human-in-the-loop checkpoints, confidence communication, feedback collection, and user control.',
+    url: 'https://pair.withgoogle.com/guidebook/'
+  },
+  {
+    title: 'Connected Papers',
+    focus: 'Citation-graph exploration for discovering influential prior work around a seed paper.',
+    url: 'https://www.connectedpapers.com/'
+  }
+];
+
+const VIDEO_SCRIPT = [
+  ['0:00-0:30', 'Motivation', 'Students often have a rough idea but miss gap, evaluation, timeline, and risk details.'],
+  ['0:30-1:30', 'Prototype tour', 'Show the rough-idea input, suggestion cards, decision cards, accepted project state, and saved memory.'],
+  ['1:30-2:45', 'Example journey', 'Run the sample topic, accept one field, add researcher material, set a target language if needed, then generate artifacts.'],
+  ['2:45-3:35', 'Workflow rationale', 'Explain extract, decide, source-ground, assemble, draft, and review as a proposal-quality feedback loop.'],
+  ['3:35-4:25', 'Source grounding', 'Explain the professor feedback: use a Connected Papers-style graph to rank relevant papers before retrieval.'],
+  ['4:25-5:00', 'Stage 2 plan', 'Promise graph screenshots, accepted-paper lists, stronger citations, revision history, and a clearer evaluator rubric.']
 ];
 
 
@@ -105,6 +155,7 @@ function App() {
   const [questions, setQuestions] = useState([]);
   const [customNote, setCustomNote] = useState('');
   const [result, setResult] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
   const [pdfUrl, setPdfUrl] = useState('');
   const [runLog, setRunLog] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -249,15 +300,29 @@ function App() {
         topic: project.topic || project.title,
         requirements: DEFAULT_REQUIREMENTS
       });
-      const nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
+      
+      let nextPdfUrl = '';
+      try {
+        nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
+      } catch (pdfError) {
+        console.warn('PDF export failed (pdflatex not installed):', pdfError.message);
+      }
+
+      // Run analysis
+      const analysisData = await postJson('/api/analyze/proposal', {
+        ...project,
+        complianceMatrix: data.complianceMatrix || []
+      });
 
       setResult(data);
+      setAnalysis(analysisData);
       updatePdfUrl(nextPdfUrl);
-      setActiveTab('pdf');
+      setActiveTab(nextPdfUrl ? 'pdf' : 'analysis');
       setRunLog((current) => [
         ...current,
         logEntry('Draft', `Generated proposal using ${data.mode}.`),
-        logEntry('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
+        logEntry('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`),
+        logEntry('Score', `${analysisData.scores.overall}/100 (${analysisData.scores.grade})`)
       ]);
     } catch (requestError) {
       setError(readError(requestError));
@@ -384,7 +449,21 @@ function App() {
     setError('');
 
     try {
-      const href = pdfUrl || (await exportPdfUrl(result.proposalLatex, project.title || 'proposal'));
+      let href = pdfUrl;
+      
+      if (!href) {
+        // Try to generate PDF if not already cached
+        try {
+          href = await exportPdfUrl(result.proposalLatex, project.title || 'proposal');
+        } catch (pdfError) {
+          // If PDF generation fails, download LaTeX instead
+          console.warn('PDF export not available:', pdfError.message);
+          downloadLatex();
+          setRunLog((current) => [...current, logEntry('Export', 'Downloaded proposal.tex (PDF unavailable - install LaTeX compiler)')]);
+          return;
+        }
+      }
+      
       const anchor = document.createElement('a');
       anchor.href = href;
       anchor.download = 'proposal.pdf';
@@ -543,6 +622,71 @@ function App() {
           </div>
 
           {error ? <p className="error-banner">{error}</p> : null}
+
+          <section className="phase-one-kit" aria-label="Phase 1 presentation support">
+            <div className="phase-card phase-card-primary">
+              <span className="eyebrow">Phase 1 Ready</span>
+              <h2>5-minute workflow design demo</h2>
+              <p>
+                Use this prototype to show how a student and agent transform a rough research idea into structured proposal
+                state, draft artifacts, and review evidence before Stage 2 refinement.
+              </p>
+              <ul className="phase-checklist">
+                {PHASE_ONE_CHECKLIST.map((item) => (
+                  <li key={item}>
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="phase-card">
+              <span className="eyebrow">External research</span>
+              <h2>Sources to cite in the video</h2>
+              <div className="source-stack">
+                {RESEARCH_SOURCES.map((source) => (
+                  <a href={source.url} target="_blank" rel="noreferrer" key={source.title}>
+                    <strong>{source.title}</strong>
+                    <span>{source.focus}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            <div className="phase-card grounding-card">
+              <span className="eyebrow">Professor feedback</span>
+              <h2>Citation-graph grounding loop</h2>
+              <p>
+                Stage 2 should reduce noisy related work by starting from a trusted seed paper, exploring a paper graph,
+                and letting the student approve the most relevant papers before the agent retrieves or cites them.
+              </p>
+              <ol className="grounding-steps">
+                {LITERATURE_GROUNDING_STEPS.map(([label, text]) => (
+                  <li key={label}>
+                    <strong>{label}</strong>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </section>
+
+          <section className="video-script-panel" aria-label="Phase 1 video outline">
+            <div>
+              <span className="eyebrow">Recording outline</span>
+              <h2>Suggested Phase 1 video flow</h2>
+            </div>
+            <ol>
+              {VIDEO_SCRIPT.map(([time, title, description]) => (
+                <li key={time}>
+                  <strong>{time}</strong>
+                  <span>{title}</span>
+                  <p>{description}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
 
           <div className="workflow-grid" aria-label="Workflow stages">
             {STAGES.map(([number, title, description], index) => (
@@ -732,6 +876,11 @@ function App() {
                       </option>
                     ))}
                   </select>
+                  <input
+                    value={project.targetLanguage || 'English'}
+                    onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
+                    placeholder="English, Spanish, Hindi, Chinese, etc."
+                  />
                 </label>
                 <label>
                   Translation Model / Engine
@@ -841,7 +990,7 @@ function App() {
                 </div>
               </div>
 
-              {renderArtifact(activeTab, result, pdfUrl)}
+              {renderArtifact(activeTab, result, pdfUrl, analysis)}
             </section>
           </div>
         </section>
@@ -882,9 +1031,18 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+const API_BASE = typeof import.meta.env !== 'undefined' && import.meta.env.VITE_API_URL 
+  ? import.meta.env.VITE_API_URL 
+  : (() => {
+      if (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1') {
+        return 'http://127.0.0.1:8787';
+      }
+      return '';
+    })();
 
 async function postJson(url, body) {
-  const response = await fetch(url, {
+  const apiUrl = API_BASE ? `${API_BASE}${url}` : url;
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -899,7 +1057,8 @@ async function postJson(url, body) {
 }
 
 async function exportPdfUrl(proposalLatex, title) {
-  const response = await fetch('/api/export/pdf', {
+  const apiUrl = API_BASE ? `${API_BASE}/api/export/pdf` : '/api/export/pdf';
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -917,7 +1076,7 @@ async function exportPdfUrl(proposalLatex, title) {
   return URL.createObjectURL(blob);
 }
 
-function renderArtifact(activeTab, result, pdfUrl) {
+function renderArtifact(activeTab, result, pdfUrl, analysis) {
   if (!result) {
     return <EmptyState text="Proposal artifacts appear after Generate Proposal." />;
   }
@@ -935,6 +1094,75 @@ function renderArtifact(activeTab, result, pdfUrl) {
       </div>
     ) : (
       <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
+    ) : (
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
+    ) : (
+      <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />
+    );
+  }
+
+  if (activeTab === 'analysis') {
+    return analysis ? (
+      <div className="analysis-wrap">
+        <div className="score-card">
+          <div className={`score-circle ${analysis.scores.gradeColor}`}>
+            <div className="score-value">{analysis.scores.overall}</div>
+            <div className="score-grade">{analysis.scores.grade}</div>
+          </div>
+          <div className="score-details">
+            <div className="score-item"><span>Research Quality:</span> <strong>{analysis.scores.researchQuality}/100</strong></div>
+            <div className="score-item"><span>Clarity:</span> <strong>{analysis.scores.clarity}/100</strong></div>
+            <div className="score-item"><span>Technical Depth:</span> <strong>{analysis.scores.technical}/100</strong></div>
+            <div className="score-item"><span>References:</span> <strong>{analysis.scores.references}/100</strong></div>
+            <div className="score-item"><span>Completion:</span> <strong>{analysis.scores.completion}/100</strong></div>
+          </div>
+        </div>
+
+        <div className="analysis-section">
+          <h3>Graduate Readiness</h3>
+          <div className="readiness-bar">
+            <div className="readiness-fill" style={{width: `${analysis.graduateReadiness.readinessPercent}%`}}></div>
+          </div>
+          <p><strong>{analysis.graduateReadiness.readinessPercent}%</strong> - {analysis.graduateReadiness.readinessLevel}</p>
+          <ul>
+            {analysis.graduateReadiness.checklist.map((item, i) => (
+              <li key={i} className={item.met ? 'met' : 'unmet'}>
+                {item.met ? '✓' : '✗'} {item.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="analysis-section">
+          <h3>Language & Technical Analysis</h3>
+          <p><strong>Level:</strong> {analysis.languageAnalysis.level}</p>
+          <p><strong>Academic Tone:</strong> {analysis.languageAnalysis.academicTone}/100</p>
+          <p><strong>Technical Depth:</strong> {analysis.languageAnalysis.technicalDepth}/100 ({analysis.languageAnalysis.technicalTermCount} terms)</p>
+          <p><strong>Readability:</strong> {analysis.languageAnalysis.readability}/100</p>
+          <p><strong>Avg Sentence Length:</strong> {analysis.languageAnalysis.averageSentenceLength} words</p>
+        </div>
+
+        <div className="analysis-section">
+          <h3>References Analysis</h3>
+          <p><strong>Count:</strong> {analysis.referenceAnalysis.count}</p>
+          <p><strong>Quality:</strong> {analysis.referenceAnalysis.quality}</p>
+          <p><strong>Score:</strong> {analysis.referenceAnalysis.score}/100</p>
+          {analysis.referenceAnalysis.suggestions.map((s, i) => (
+            <p key={i} className="suggestion">💡 {s}</p>
+          ))}
+        </div>
+
+        <div className="analysis-section">
+          <h3>Top Recommendations</h3>
+          {analysis.recommendations.slice(0, 3).map((rec, i) => (
+            <div key={i} className={`recommendation ${rec.priority.toLowerCase()}`}>
+              <strong>{rec.area}</strong>: {rec.message}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <EmptyState text="Analysis not available." />
     );
   }
 
