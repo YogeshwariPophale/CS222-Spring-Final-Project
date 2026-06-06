@@ -96,6 +96,7 @@ Submit:
 - optional screenshots or interaction trace.
 
 The runnable app is kept clean for student/researcher use. Presentation notes, professor feedback, and follow-up tasks are tracked separately in [docs/WORK_NOTES.md](docs/WORK_NOTES.md). A Phase 1 demo artifact and recording outline is also available at [docs/stage_1_demo_artifact.md](docs/stage_1_demo_artifact.md).
+A ready-to-use Phase 1 demo artifact and recording outline is available at [docs/stage_1_demo_artifact.md](docs/stage_1_demo_artifact.md), including professor-feedback updates for a Connected Papers-style source-grounding loop, researcher override fields, and optional target-language/translation-model controls.
 
 Details: [docs/stage_1_workflow_design.md](docs/stage_1_workflow_design.md)
 
