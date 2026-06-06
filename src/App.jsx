@@ -96,6 +96,28 @@ const TARGET_LANGUAGE_OPTIONS = [
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
 
+const TARGET_LANGUAGE_OPTIONS = [
+  'English',
+  'Spanish',
+  'Hindi',
+  'Chinese',
+  'French',
+  'German',
+  'Arabic',
+  'Portuguese',
+  'Japanese',
+  'Korean',
+  'Italian',
+  'Russian',
+  'Bengali',
+  'Urdu',
+  'Tamil',
+  'Telugu',
+  'Marathi',
+  'Gujarati'
+];
+
+
 function App() {
   const [topicInput, setTopicInput] = useState('');
   const [project, setProject] = useState(EMPTY_PROJECT);
@@ -896,6 +918,8 @@ ${trimmed || 'File was empty.'}`;
 function mergeText(current, addition) {
   const base = String(current || '').trim();
   const next = String(addition || '').trim();
+  if (!next) return base;
+  if (!base) return next;
 
   if (!next) return base;
   if (!base) return next;
@@ -913,6 +937,20 @@ function formatBytes(bytes) {
 }
 
 async function postJson(url, body) {
+  let response;
+
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (networkError) {
+    throw new Error(`Cannot reach the proposal API at ${url}. Make sure npm.cmd run dev is still running.`);
+  }
+
+  const text = await response.text();
+  const data = parseJsonResponse(text, url);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -922,29 +960,61 @@ async function postJson(url, body) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.detail || data.error || 'Request failed.');
+    throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
   }
 
   return data;
 }
 
+function parseJsonResponse(text, url) {
+  if (!text.trim()) {
+    throw new Error(`The proposal API returned an empty response for ${url}. Restart npm.cmd run dev and check the API terminal output.`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`);
+  }
+}
+
 async function exportPdfUrl(proposalLatex, title) {
-  const response = await fetch('/api/export/pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      title,
-      proposalLatex
-    })
-  });
+  let response;
+
+  try {
+    response = await fetch('/api/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        proposalLatex
+      })
+    });
+  } catch {
+    throw new Error('Cannot reach the PDF export API. Make sure npm.cmd run dev is still running.');
+  }
 
   if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.detail || data.error || 'PDF export failed.');
+    throw new Error(await readResponseError(response, '/api/export/pdf'));
   }
 
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+}
+
+async function readResponseError(response, url) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return `The proposal API returned an empty error response for ${url} with status ${response.status}.`;
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return data.detail || data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`;
+  }
 }
 
 function renderArtifact(activeTab, result, pdfUrl) {
