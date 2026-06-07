@@ -11,6 +11,23 @@ These errors usually mean local files were pasted or merged twice. The clean rep
 
 ## Quick fix when you do not need to keep local edits
 
+Run this command first. It restores the known project files from Git and checks that the app builds:
+
+```powershell
+npm.cmd run repair:local
+```
+
+Then start the site:
+
+```powershell
+npm.cmd run dev
+```
+
+If the repair script is not available in your local copy yet, run these manual commands instead:
+
+```powershell
+git status
+git restore src/App.jsx server/pdfExport.js server/proposalGenerator.js src/index.css README.md docs/WORK_NOTES.md docs/stage_1_demo_artifact.md docs/local_repair_guide.md
 Run these commands in PowerShell from the repository folder:
 
 ```powershell
