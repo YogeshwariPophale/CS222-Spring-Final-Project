@@ -142,7 +142,6 @@ function App() {
         createLog('Draft', `Generated proposal using ${data.mode}.`),
         createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`),
         createLog('Score', `Analysis score ${analyzeProposal(project, data).scores.overall}/100.`)
-        createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
       ]);
     } catch (requestError) {
       setError(readError(requestError));
@@ -819,5 +818,4 @@ function readError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export default App;
 export default App;
