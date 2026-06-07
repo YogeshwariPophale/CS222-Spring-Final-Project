@@ -18,17 +18,163 @@ export async function proposalLatexToPdf(latex, title = 'proposal') {
   const pdfPath = path.join(workdir, 'proposal.pdf');
 
   try {
-    await writeFile(texPath, sanitizeLatexForExport(ensureCompleteLatexDocument(source, title)), 'utf8');
-    await execFileAsync('tectonic', ['--outdir', workdir, texPath], {
-      cwd: workdir,
-      timeout: 60000,
-      maxBuffer: 1024 * 1024 * 8
-    });
+    const preparedLatex = sanitizeLatexForExport(ensureCompleteLatexDocument(source, title));
+    await writeFile(texPath, preparedLatex, 'utf8');
 
-    return await readFile(pdfPath);
+    try {
+      await execFileAsync('tectonic', ['--outdir', workdir, texPath], {
+        cwd: workdir,
+        timeout: 60000,
+        maxBuffer: 1024 * 1024 * 8
+      });
+
+      return await readFile(pdfPath);
+    } catch (compileError) {
+      return renderFallbackPdf({
+        latex: preparedLatex,
+        title,
+        reason: compileError instanceof Error ? compileError.message : String(compileError)
+      });
+    }
   } finally {
     await rm(workdir, { recursive: true, force: true });
   }
+}
+
+function renderFallbackPdf({ latex, title, reason }) {
+  const lines = latexToPlainText(latex, title, reason);
+  const pages = paginateLines(lines, 54);
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+
+  const catalogId = addObject('');
+  const pagesId = addObject('');
+  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const pageIds = [];
+
+  pages.forEach((pageLines) => {
+    const content = buildPageContent(pageLines);
+    const contentId = addObject(`<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`);
+    const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    pageIds.push(pageId);
+  });
+
+  objects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+  objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+
+  return Buffer.from(serializePdf(objects), 'binary');
+}
+
+function latexToPlainText(latex, title, reason) {
+  const body = String(latex || '')
+    .replace(/\\begin\{document\}|\\end\{document\}/g, '')
+    .replace(/\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/g, '')
+    .replace(/\\usepackage(?:\[[^\]]*\])?\{[^}]+\}/g, '')
+    .replace(/\\setlist\{[^}]+\}/g, '')
+    .replace(/\\title\{([^}]*)\}/g, 'Title: $1\n')
+    .replace(/\\section\{([^}]*)\}/g, '\n$1\n')
+    .replace(/\\subsection\{([^}]*)\}/g, '\n$1\n')
+    .replace(/\\textbf\{([^}]*)\}/g, '$1')
+    .replace(/\\texttt\{([^}]*)\}/g, '$1')
+    .replace(/\\item\s+/g, '- ')
+    .replace(/\\(?:begin|end)\{[^}]+\}/g, '')
+    .replace(/\\[a-zA-Z]+(?:\[[^\]]*\])?(?:\{[^}]*\})?/g, '')
+    .replace(/[{}]/g, '')
+    .replace(/\$([^$]*)\$/g, '$1')
+    .replace(/\\%/g, '%')
+    .replace(/\\&/g, '&')
+    .replace(/\\_/g, '_')
+    .replace(/\\#/g, '#')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const header = [
+    title || 'proposal',
+    'PDF preview generated with the built-in fallback renderer.',
+    `LaTeX compiler note: ${String(reason || 'tectonic unavailable').slice(0, 180)}`,
+    ''
+  ];
+
+  return [...header, ...wrapText(body, 92)];
+}
+
+function wrapText(text, width) {
+  const output = [];
+
+  String(text || '').split(/\n/).forEach((paragraph) => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+
+    if (!words.length) {
+      output.push('');
+      return;
+    }
+
+    let line = '';
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > width) {
+        output.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    });
+
+    if (line) output.push(line);
+  });
+
+  return output;
+}
+
+function paginateLines(lines, perPage) {
+  const pages = [];
+  for (let index = 0; index < lines.length; index += perPage) {
+    pages.push(lines.slice(index, index + perPage));
+  }
+  return pages.length ? pages : [['No proposal content was available.']];
+}
+
+function buildPageContent(lines) {
+  const commands = ['BT', '/F1 10 Tf', '50 750 Td', '14 TL'];
+
+  lines.forEach((line, index) => {
+    if (index > 0) commands.push('T*');
+    commands.push(`(${escapePdfText(line)}) Tj`);
+  });
+
+  commands.push('ET');
+  return commands.join('\n');
+}
+
+function serializePdf(objects) {
+  const parts = ['%PDF-1.4\n'];
+  const offsets = [0];
+
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(parts.join(''), 'binary'));
+    parts.push(`${index + 1} 0 obj\n${body}\nendobj\n`);
+  });
+
+  const xrefOffset = Buffer.byteLength(parts.join(''), 'binary');
+  parts.push(`xref\n0 ${objects.length + 1}\n`);
+  parts.push('0000000000 65535 f \n');
+  offsets.slice(1).forEach((offset) => {
+    parts.push(`${String(offset).padStart(10, '0')} 00000 n \n`);
+  });
+  parts.push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+
+  return parts.join('');
+}
+
+function escapePdfText(value) {
+  return String(value || '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '?')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }
 
 function sanitizeLatexForExport(source) {
