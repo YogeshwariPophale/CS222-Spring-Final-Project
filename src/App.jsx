@@ -42,6 +42,17 @@ const TABS = [
   ['matrix', 'Matrix'],
   ['evaluation', 'Review'],
   ['analysis', 'Analysis']
+];
+
+const PROJECT_FIELD_PAIRS = safePairs(PROJECT_FIELDS);
+const TAB_PAIRS = safePairs(TABS);
+
+function safePairs(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => Array.isArray(item) && item.length >= 2 && item[0])
+    .map((item) => [String(item[0]), String(item[1] || item[0])]);
+}
+
   ['evaluation', 'Review']
 ];
 
@@ -60,6 +71,7 @@ function App() {
   const busy = status !== 'idle';
   const coveredRows = result?.complianceMatrix?.filter((row) => /^covered$/i.test(row.status)).length || 0;
   const totalRows = result?.complianceMatrix?.length || 0;
+  const acceptedCount = PROJECT_FIELD_PAIRS.filter((pair) => project[pair[0]]).length;
   const acceptedCount = PROJECT_FIELDS.filter(([field]) => project[field]).length;
   const analysis = result ? analyzeProposal(project, result, coveredRows, totalRows) : null;
 
@@ -343,16 +355,20 @@ function App() {
             </section>
 
             <section className="workspace-panel state-panel">
-              <PanelHeader title="Accepted Project State" meta={`${acceptedCount}/${PROJECT_FIELDS.length} ready`} />
+              <PanelHeader title="Accepted Project State" meta={`${acceptedCount}/${PROJECT_FIELD_PAIRS.length} ready`} />
               <label>
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
               </label>
-              {PROJECT_FIELDS.map(([field, label]) => (
+              {PROJECT_FIELD_PAIRS.map((pair) => {
+                const [field, label] = pair;
+                return (
                 <label key={field}>
                   {label}
                   <textarea value={project[field] || ''} onChange={(event) => updateProjectField(field, event.target.value)} />
                 </label>
+                );
+              })}
               ))}
               <button className="primary" type="button" disabled={!project.title || busy} onClick={generateProposal}>
                 {status === 'drafting' ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
@@ -381,13 +397,19 @@ function App() {
             <section className="workflow-panel artifacts-panel">
               <div className="artifact-toolbar">
                 <nav className="tabs" aria-label="Generated artifacts">
+                  {TAB_PAIRS.map((pair) => {
+                    const [id, label] = pair;
+                    return (
+                    <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
                   {TABS.map(([id, label]) => (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : <FileText size={17} />}
                       {label}
                     </button>
-                  ))}
+                    );
+                  })}
                 </nav>
                 <button className="secondary" type="button" disabled={!result?.proposalLatex} onClick={downloadLatex}>
                   <Download size={17} />
@@ -410,7 +432,7 @@ function App() {
                 </div>
                 <div>
                   <span>Accepted</span>
-                  <strong>{acceptedCount}/{PROJECT_FIELDS.length}</strong>
+                  <strong>{acceptedCount}/{PROJECT_FIELD_PAIRS.length}</strong>
                 </div>
                 <div>
                   <span>Provider</span>
@@ -504,6 +526,26 @@ async function exportPdfUrl(proposalLatex, title) {
     } catch (requestError) {
       lastError = requestError;
     }
+  }
+
+  throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
+}
+
+async function readResponseError(response, url) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return `The proposal API returned an empty error response for ${url} with status ${response.status}.`;
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return data.detail || data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`;
+  }
+}
+
   }
 
   throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
@@ -692,6 +734,9 @@ function analyzeProposal(project, result, coveredRows = countCovered(result?.com
     graduateReadiness: {
       readinessPercent: Math.round((readinessMet / readinessChecklist.length) * 100),
       readinessLevel: readinessMet >= 6 ? 'Ready for graduate-level revision' : readinessMet >= 4 ? 'Promising but needs refinement' : 'Needs major development',
+      checklist: readinessChecklist
+        .filter((item) => Array.isArray(item) && item.length >= 2)
+        .map((item) => ({ name: item[0], met: Boolean(item[1]) }))
       checklist: readinessChecklist.map(([name, met]) => ({ name, met }))
     },
     languageAnalysis: {
@@ -784,7 +829,7 @@ function EmptyState({ text, compact = false }) {
 function stageStatus(index, suggestions, decisions, project, result) {
   if (index === 0 && suggestions.length) return 'status-complete';
   if (index === 1 && decisions.length) return 'status-complete';
-  if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'status-complete';
+  if (index === 2 && PROJECT_FIELD_PAIRS.some((pair) => project[pair[0]])) return 'status-complete';
   if (index >= 3 && result) return 'status-complete';
   return 'status-waiting';
 }
@@ -792,7 +837,7 @@ function stageStatus(index, suggestions, decisions, project, result) {
 function stageLabel(index, suggestions, decisions, project, result) {
   if (index === 0 && suggestions.length) return 'Shown';
   if (index === 1 && decisions.length) return 'Shown';
-  if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'Shown';
+  if (index === 2 && PROJECT_FIELD_PAIRS.some((pair) => project[pair[0]])) return 'Shown';
   if (index >= 3 && result) return 'Shown';
   return 'Ready';
 }
@@ -802,7 +847,7 @@ function countCovered(rows = []) {
 }
 
 function labelForField(field) {
-  const found = PROJECT_FIELDS.find(([key]) => key === field);
+  const found = PROJECT_FIELD_PAIRS.find((pair) => pair[0] === field);
   return found?.[1] || 'Field';
 }
 
