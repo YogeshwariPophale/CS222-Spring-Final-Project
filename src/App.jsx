@@ -64,6 +64,9 @@ const TABS = [
 
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
 
+
+
+
 function App() {
   const [topicInput, setTopicInput] = useState('');
   const [project, setProject] = useState(EMPTY_PROJECT);
@@ -337,6 +340,24 @@ function App() {
     }
   }
 
+  async function openPdfPreview() {
+    if (!result?.proposalLatex) return;
+
+    setStatus('exporting');
+    setError('');
+
+    try {
+      const href = pdfUrl || (await exportPdfUrl(result.proposalLatex, project.title || 'proposal'));
+      window.open(href, '_blank', 'noopener,noreferrer');
+      if (!pdfUrl) updatePdfUrl(href);
+      setRunLog((current) => [...current, logEntry('Preview', 'Opened proposal PDF preview in a new tab.')]);
+    } catch (requestError) {
+      setError(readError(requestError));
+    } finally {
+      setStatus('idle');
+    }
+  }
+
   function saveMemory({ silent = false } = {}) {
     const snapshot = {
       savedAt: new Date().toISOString(),
@@ -405,6 +426,165 @@ function App() {
     setMemorySavedAt('');
   }
 
+  function renderSuggestionsBody() {
+    if (!fieldSuggestions.length) {
+      return <EmptyState text="Enter a rough idea, then let the model structure it." compact />;
+    }
+
+    return (
+      <div className="suggestion-deck">
+        <div className="deck-progress">
+          <span>{Math.min(suggestionIndex + 1, fieldSuggestions.length)} / {fieldSuggestions.length}</span>
+          <strong>{acceptedSuggestionCount} accepted</strong>
+        </div>
+        {currentSuggestion ? (
+          <article className="suggestion-card active-card" key={`${currentSuggestion.field}-${currentSuggestion.value}`}>
+            <div className="card-line">
+              <h3>{currentSuggestion.label || labelForField(currentSuggestion.field)}</h3>
+              <span className={`priority ${String(currentSuggestion.confidence || 'medium').toLowerCase()}`}>
+                {currentSuggestion.confidence || 'Medium'}
+              </span>
+            </div>
+            <p>{currentSuggestion.value}</p>
+            <small>{currentSuggestion.reason}</small>
+            <div className="deck-actions">
+              <button
+                className={project[currentSuggestion.field] === currentSuggestion.value ? 'secondary accepted' : 'primary'}
+                type="button"
+                onClick={() => acceptSuggestion(currentSuggestion)}
+              >
+                <CheckCircle2 size={16} aria-hidden="true" />
+                {project[currentSuggestion.field] === currentSuggestion.value ? 'Accepted' : 'Accept and Next'}
+              </button>
+              <button className="secondary" type="button" onClick={skipSuggestion}>
+                Skip
+              </button>
+            </div>
+          </article>
+        ) : null}
+        <div className="deck-nav">
+          <button
+            className="secondary"
+            type="button"
+            disabled={suggestionIndex === 0}
+            onClick={() => setSuggestionIndex((current) => Math.max(current - 1, 0))}
+          >
+            Previous
+          </button>
+          <button
+            className="secondary"
+            type="button"
+            disabled={suggestionIndex >= fieldSuggestions.length - 1}
+            onClick={() => setSuggestionIndex((current) => Math.min(current + 1, fieldSuggestions.length - 1))}
+          >
+            Next
+          </button>
+        </div>
+        <div className="deck-strip" aria-label="Suggestion progress">
+          {fieldSuggestions.map((suggestion, index) => (
+            <button
+              key={`${suggestion.field}-${index}`}
+              className={[
+                'deck-dot',
+                index === suggestionIndex ? 'current' : '',
+                project[suggestion.field] === suggestion.value ? 'done' : ''
+              ].join(' ')}
+              type="button"
+              aria-label={`Open ${suggestion.label || labelForField(suggestion.field)}`}
+              onClick={() => setSuggestionIndex(index)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDecisionsBody() {
+    if (!decisions.length) {
+      return <EmptyState text="No major decision is open. Review the accepted state or draft the proposal." compact />;
+    }
+
+    return (
+      <div className="decision-deck">
+        <div className="deck-progress">
+          <span>{Math.min(decisionIndex + 1, decisions.length)} / {decisions.length}</span>
+          <strong>{decisions.length} open</strong>
+        </div>
+        {currentDecision ? (
+          <article className="decision-card active-card" key={currentDecision.id}>
+            <h3>{currentDecision.title}</h3>
+            <p>{currentDecision.question}</p>
+            <div className="option-stack">
+              {currentDecision.options.map((option) => (
+                <button
+                  className="option-button"
+                  key={`${currentDecision.id}-${option.label}`}
+                  type="button"
+                  onClick={() => chooseOption(currentDecision, option)}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{option.value}</span>
+                  <small>{option.rationale}</small>
+                </button>
+              ))}
+            </div>
+            <div className="deck-actions">
+              <button className="secondary" type="button" onClick={skipDecision}>
+                Skip
+              </button>
+            </div>
+          </article>
+        ) : null}
+        <div className="deck-nav">
+          <button
+            className="secondary"
+            type="button"
+            disabled={decisionIndex === 0}
+            onClick={() => setDecisionIndex((current) => Math.max(current - 1, 0))}
+          >
+            Previous
+          </button>
+          <button
+            className="secondary"
+            type="button"
+            disabled={decisionIndex >= decisions.length - 1}
+            onClick={() => setDecisionIndex((current) => Math.min(current + 1, decisions.length - 1))}
+          >
+            Next
+          </button>
+        </div>
+        <div className="deck-strip" aria-label="Decision progress">
+          {decisions.map((decision, index) => (
+            <button
+              key={`${decision.id}-${index}`}
+              className={['deck-dot', index === decisionIndex ? 'current' : ''].join(' ')}
+              type="button"
+              aria-label={`Open ${decision.title}`}
+              onClick={() => setDecisionIndex(index)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderRunLogBody() {
+    if (!runLog.length) {
+      return <EmptyState text="Run log appears after the idea is structured." compact />;
+    }
+
+    return (
+      <ol className="run-log">
+        {runLog.map((entry) => (
+          <li key={entry.id}>
+            <span>{entry.stage}</span>
+            <p>{entry.message}</p>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -465,7 +645,6 @@ function App() {
 
           {error ? <p className="error-banner">{error}</p> : null}
 
-
           <div className="workflow-grid" aria-label="Workflow stages">
             {STAGES.map(([number, title, description], index) => (
               <article className="stage-card" key={title}>
@@ -484,142 +663,12 @@ function App() {
           <div className="workspace-grid">
             <section className="workspace-panel suggestions-panel">
               <PanelHeader title="LLM Suggested Structure" meta={`${fieldSuggestions.length} fields`} />
-              {fieldSuggestions.length ? (
-                <div className="suggestion-deck">
-                  <div className="deck-progress">
-                    <span>{Math.min(suggestionIndex + 1, fieldSuggestions.length)} / {fieldSuggestions.length}</span>
-                    <strong>{acceptedSuggestionCount} accepted</strong>
-                  </div>
-                  {currentSuggestion ? (
-                    <article className="suggestion-card active-card" key={`${currentSuggestion.field}-${currentSuggestion.value}`}>
-                      <div className="card-line">
-                        <h3>{currentSuggestion.label || labelForField(currentSuggestion.field)}</h3>
-                        <span className={`priority ${String(currentSuggestion.confidence || 'medium').toLowerCase()}`}>
-                          {currentSuggestion.confidence || 'Medium'}
-                        </span>
-                      </div>
-                      <p>{currentSuggestion.value}</p>
-                      <small>{currentSuggestion.reason}</small>
-                      <div className="deck-actions">
-                        <button
-                          className={project[currentSuggestion.field] === currentSuggestion.value ? 'secondary accepted' : 'primary'}
-                          type="button"
-                          onClick={() => acceptSuggestion(currentSuggestion)}
-                        >
-                          <CheckCircle2 size={16} aria-hidden="true" />
-                          {project[currentSuggestion.field] === currentSuggestion.value ? 'Accepted' : 'Accept and Next'}
-                        </button>
-                        <button className="secondary" type="button" onClick={skipSuggestion}>
-                          Skip
-                        </button>
-                      </div>
-                    </article>
-                  ) : null}
-                  <div className="deck-nav">
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={suggestionIndex === 0}
-                      onClick={() => setSuggestionIndex((current) => Math.max(current - 1, 0))}
-                    >
-                      Previous
-                    </button>
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={suggestionIndex >= fieldSuggestions.length - 1}
-                      onClick={() => setSuggestionIndex((current) => Math.min(current + 1, fieldSuggestions.length - 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                  <div className="deck-strip" aria-label="Suggestion progress">
-                    {fieldSuggestions.map((suggestion, index) => (
-                      <button
-                        key={`${suggestion.field}-${index}`}
-                        className={[
-                          'deck-dot',
-                          index === suggestionIndex ? 'current' : '',
-                          project[suggestion.field] === suggestion.value ? 'done' : ''
-                        ].join(' ')}
-                        type="button"
-                        aria-label={`Open ${suggestion.label || labelForField(suggestion.field)}`}
-                        onClick={() => setSuggestionIndex(index)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <EmptyState text="Enter a rough idea, then let the model structure it." compact />
-              )}
+              {renderSuggestionsBody()}
             </section>
 
             <section className="workspace-panel decisions-panel">
               <PanelHeader title="Decision Needed" meta={`${decisions.length} open`} />
-              {decisions.length ? (
-                <div className="decision-deck">
-                  <div className="deck-progress">
-                    <span>{Math.min(decisionIndex + 1, decisions.length)} / {decisions.length}</span>
-                    <strong>{decisions.length} open</strong>
-                  </div>
-                  {currentDecision ? (
-                    <article className="decision-card active-card" key={currentDecision.id}>
-                      <h3>{currentDecision.title}</h3>
-                      <p>{currentDecision.question}</p>
-                      <div className="option-stack">
-                        {currentDecision.options.map((option) => (
-                          <button
-                            className="option-button"
-                            key={`${currentDecision.id}-${option.label}`}
-                            type="button"
-                            onClick={() => chooseOption(currentDecision, option)}
-                          >
-                            <strong>{option.label}</strong>
-                            <span>{option.value}</span>
-                            <small>{option.rationale}</small>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="deck-actions">
-                        <button className="secondary" type="button" onClick={skipDecision}>
-                          Skip
-                        </button>
-                      </div>
-                    </article>
-                  ) : null}
-                  <div className="deck-nav">
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={decisionIndex === 0}
-                      onClick={() => setDecisionIndex((current) => Math.max(current - 1, 0))}
-                    >
-                      Previous
-                    </button>
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={decisionIndex >= decisions.length - 1}
-                      onClick={() => setDecisionIndex((current) => Math.min(current + 1, decisions.length - 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                  <div className="deck-strip" aria-label="Decision progress">
-                    {decisions.map((decision, index) => (
-                      <button
-                        key={`${decision.id}-${index}`}
-                        className={['deck-dot', index === decisionIndex ? 'current' : ''].join(' ')}
-                        type="button"
-                        aria-label={`Open ${decision.title}`}
-                        onClick={() => setDecisionIndex(index)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <EmptyState text="No major decision is open. Review the accepted state or draft the proposal." compact />
-              )}
+              {renderDecisionsBody()}
 
               <section className="custom-note">
                 <h3>Extra Note</h3>
@@ -657,18 +706,7 @@ function App() {
           <div className="workflow-columns">
             <section className="workflow-panel">
               <h2>Run Log</h2>
-              {runLog.length ? (
-                <ol className="run-log">
-                  {runLog.map((entry) => (
-                    <li key={entry.id}>
-                      <span>{entry.stage}</span>
-                      <p>{entry.message}</p>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <EmptyState text="Run log appears after the idea is structured." compact />
-              )}
+              {renderRunLogBody()}
             </section>
 
             <section className="workflow-panel artifacts-panel">
@@ -689,6 +727,10 @@ function App() {
                 <button className="secondary" type="button" disabled={!result?.proposalLatex} onClick={downloadLatex}>
                   <Download size={17} aria-hidden="true" />
                   LaTeX
+                </button>
+                <button className="secondary" type="button" disabled={!result?.proposalLatex || status !== 'idle'} onClick={openPdfPreview}>
+                  {status === 'exporting' ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}
+                  Open Preview
                 </button>
                 <button
                   className="primary"
@@ -726,37 +768,77 @@ function App() {
 }
 
 async function postJson(url, body) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await response.json();
+  let response;
+
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (networkError) {
+    throw new Error(`Cannot reach the proposal API at ${url}. Make sure npm.cmd run dev is still running.`);
+  }
+
+  const text = await response.text();
+  const data = parseJsonResponse(text, url);
 
   if (!response.ok) {
-    throw new Error(data.detail || data.error || 'Request failed.');
+    throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
   }
 
   return data;
 }
 
+function parseJsonResponse(text, url) {
+  if (!text.trim()) {
+    throw new Error(`The proposal API returned an empty response for ${url}. Restart npm.cmd run dev and check the API terminal output.`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`);
+  }
+}
+
 async function exportPdfUrl(proposalLatex, title) {
-  const response = await fetch('/api/export/pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      title,
-      proposalLatex
-    })
-  });
+  let response;
+
+  try {
+    response = await fetch('/api/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        proposalLatex
+      })
+    });
+  } catch {
+    throw new Error('Cannot reach the PDF export API. Make sure npm.cmd run dev is still running.');
+  }
 
   if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.detail || data.error || 'PDF export failed.');
+    throw new Error(await readResponseError(response, '/api/export/pdf'));
   }
 
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+}
+
+async function readResponseError(response, url) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return `The proposal API returned an empty error response for ${url} with status ${response.status}.`;
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return data.detail || data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`;
+  }
 }
 
 function renderArtifact(activeTab, result, pdfUrl) {
@@ -765,10 +847,20 @@ function renderArtifact(activeTab, result, pdfUrl) {
   }
 
   if (activeTab === 'pdf') {
-    return pdfUrl ? (
-      <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
-    ) : (
-      <EmptyState text="PDF preview is rendering." />
+    if (!pdfUrl) {
+      return <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />;
+    }
+
+    return (
+      <div className="pdf-preview-frame">
+        <object className="pdf-preview" data={pdfUrl} type="application/pdf" aria-label="Compiled proposal PDF preview">
+          <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
+          <p className="pdf-preview-help">
+            Your browser did not render the PDF inline. Use Open Preview to view it in a full browser tab, or download the
+            PDF if your VS Code preview blocks embedded PDF files.
+          </p>
+        </object>
+      </div>
     );
   }
 

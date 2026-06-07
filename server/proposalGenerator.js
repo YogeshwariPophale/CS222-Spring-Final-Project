@@ -10,7 +10,10 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Evaluation plan
 - Risks and mitigation
 - Resources or budget
-- References, assumptions, or source notes`;
+- References, assumptions, or source notes
+- Uploaded reference paper notes when available
+- Researcher-provided material or override notes when available
+- Target language or translation instructions when requested`;
 
 const EMPTY_PROJECT_FOR_SERVER = {
   title: '',
@@ -21,6 +24,11 @@ const EMPTY_PROJECT_FOR_SERVER = {
   evaluation: '',
   resources: '',
   references: '',
+  uploadedReferences: '',
+  researcherMaterial: '',
+  overrideInstructions: '',
+  targetLanguage: 'English',
+  translationModel: '',
   requirements: DEFAULT_REQUIREMENTS
 };
 
@@ -51,7 +59,10 @@ Rules:
 - Mark unsupported claims as assumptions.
 - Include a concrete agent workflow when the method involves an agent.
 - Include at least one LaTeX-native figure, diagram, workflow chart, or architecture sketch with a caption.
-- Do not invent citations. Use source notes or assumptions when sources are missing.`;
+- Do not invent citations. Use source notes or assumptions when sources are missing.
+- Treat uploadedReferences, researcherMaterial, and overrideInstructions as higher priority than generated suggestions.
+- If targetLanguage is not English, write the proposal in that target language while keeping LaTeX commands compile-safe.
+- If translationModel is provided, mention it in the evaluation report as the intended translation/review model or engine.`;
 
 const QUESTION_SYSTEM_PROMPT = `You are running an interactive proposal-agent workflow.
 
@@ -64,11 +75,16 @@ Return strict JSON:
     "timeline": "",
     "evaluation": "",
     "resources": "",
-    "references": ""
+    "references": "",
+    "uploadedReferences": "",
+    "researcherMaterial": "",
+    "overrideInstructions": "",
+    "targetLanguage": "English",
+    "translationModel": ""
   },
   "fieldSuggestions": [
     {
-      "field": "title | problem | method | timeline | evaluation | resources | references",
+      "field": "title | problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "label": "human-readable label",
       "value": "specific suggested content",
       "confidence": "High | Medium | Low",
@@ -79,7 +95,7 @@ Return strict JSON:
     {
       "id": "short-stable-id",
       "title": "decision title",
-      "field": "problem | method | timeline | evaluation | resources | references",
+      "field": "problem | method | timeline | evaluation | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "question": "context-aware decision prompt",
       "options": [
         {
@@ -92,7 +108,7 @@ Return strict JSON:
   ],
   "questions": [
     {
-      "field": "problem | method | evaluation | timeline | resources | references",
+      "field": "problem | method | evaluation | timeline | resources | references | uploadedReferences | researcherMaterial | overrideInstructions",
       "question": "one concise question",
       "reason": "why this answer matters",
       "priority": "High | Medium | Low"
@@ -241,10 +257,10 @@ async function refineProjectWithApi(payload) {
 }
 
 async function generateWithApi(project, checklist) {
-  const model = clean(process.env.LLM_MODEL);
+  const model = chooseGenerationModel(project);
 
   if (!model) {
-    throw new Error('LLM_MODEL is required when LLM_API_KEY and LLM_API_URL are configured.');
+    throw new Error('LLM_MODEL is required when LLM_API_KEY and LLM_API_URL are configured. To override per draft, set Translation Model to api:model-name.');
   }
 
   const promptPayload = {
@@ -275,6 +291,16 @@ async function generateWithApi(project, checklist) {
       rawResponse: content
     }
   };
+}
+
+function chooseGenerationModel(project) {
+  const requested = clean(project.translationModel);
+
+  if (/^api:/i.test(requested)) {
+    return requested.replace(/^api:/i, '').trim();
+  }
+
+  return clean(process.env.LLM_MODEL);
 }
 
 async function callModel({ systemPrompt, payload, model, temperature }) {
@@ -406,6 +432,11 @@ function buildLocalProposalLatex(project) {
   const timeline = project.timeline || 'Phase 1 literature and requirement review; Phase 2 workflow and method design; Phase 3 prototype or study setup; Phase 4 evaluation and analysis; Phase 5 final proposal revision and source notes.';
   const resources = project.resources || 'This browser app, a local Node API service, an optional LLM API key, proposal-writing references, and source notes for unsupported claims.';
   const references = project.references || 'Course proposal requirements and demo scaffold. Additional claims are treated as assumptions.';
+  const uploadedReferences = project.uploadedReferences || 'No reference paper uploads were provided. Paste extracted abstracts, BibTeX, or citation notes here for stronger grounding.';
+  const researcherMaterial = project.researcherMaterial || 'No researcher-provided source material was entered. Generated content should be reviewed by the student.';
+  const overrideInstructions = project.overrideInstructions || 'No special override instructions were provided; generated sections may be revised by the student.';
+  const targetLanguage = project.targetLanguage || 'English';
+  const translationModel = project.translationModel || 'Default configured proposal model or human review';
 
   return String.raw`\documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
@@ -420,7 +451,7 @@ function buildLocalProposalLatex(project) {
 \maketitle
 
 \begin{abstract}
-This project builds a proposal agent that turns a rough research direction into a structured research proposal. The workflow collects project intent, calls an API-backed generator when configured, produces a LaTeX proposal draft, checks requirements, and lists revision questions.
+This project builds a proposal agent that turns a rough research direction into a structured research proposal. The workflow collects project intent, preserves researcher overrides, supports a target output language (${latexInline(targetLanguage)}), calls an API-backed generator when configured, produces a LaTeX proposal draft, checks requirements, and lists revision questions.
 \end{abstract}
 
 \section{Motivation and Gap}
@@ -435,7 +466,8 @@ Create a working proposal generator that can produce a LaTeX proposal, complianc
 ${latexParagraph(method)}
 
 \begin{enumerate}
-\item Capture topic, problem, method, timeline, evaluation plan, resources, and requirement text.
+\item Capture topic, problem, method, timeline, evaluation plan, resources, requirement text, researcher-provided material, override instructions, target language, and translation model preference.
+\item Let the researcher interrupt or override generated content before drafting.
 \item Send the structured state to the local API service.
 \item Use the configured LLM API when available; otherwise use a deterministic fallback.
 \item Return LaTeX source, requirement coverage, self-evaluation, and clarification questions.
@@ -467,7 +499,18 @@ Test cases include a complete idea, a missing-information idea, a requirement-ch
 \item API key is missing: use deterministic fallback and document that mode.
 \item Generated claims are unsupported: mark them as assumptions and ask for source notes.
 \item Research scope becomes too broad: narrow the contribution, milestones, and evaluation criteria before drafting.
+\item Target-language wording is inaccurate: run a translation-model or human review pass and keep technical terms consistent.
 \end{itemize}
+
+\section{Reference Uploads and Researcher Overrides}
+\textbf{Uploaded reference notes:} ${latexParagraph(uploadedReferences)}
+
+\textbf{Researcher-provided material:} ${latexParagraph(researcherMaterial)}
+
+\textbf{Override instructions:} ${latexParagraph(overrideInstructions)}
+
+\section{Language and Translation Plan}
+Target language: ${latexInline(targetLanguage)}. Intended translation model or engine: ${latexInline(translationModel)}. If the local fallback generated this draft, a multilingual or human review pass should translate and verify the final wording before submission.
 
 \section{Resources}
 ${latexParagraph(resources)}
@@ -791,7 +834,12 @@ function labelForField(field) {
     timeline: 'Research Milestones',
     evaluation: 'Evaluation Plan',
     resources: 'Resources',
-    references: 'Sources / Assumptions'
+    references: 'Sources / Assumptions',
+    uploadedReferences: 'Uploaded Reference Notes',
+    researcherMaterial: 'Researcher Material',
+    overrideInstructions: 'Override Instructions',
+    targetLanguage: 'Target Language',
+    translationModel: 'Translation Model'
   };
 
   return labels[clean(field)] || titleCase(field);
@@ -805,7 +853,12 @@ function summarizeProjectInput(project) {
     ['Timeline', project.timeline],
     ['Evaluation', project.evaluation],
     ['Resources', project.resources],
-    ['References', project.references]
+    ['References', project.references],
+    ['Uploaded Reference Notes', project.uploadedReferences],
+    ['Researcher Material', project.researcherMaterial],
+    ['Override Instructions', project.overrideInstructions],
+    ['Target Language', project.targetLanguage],
+    ['Translation Model', project.translationModel]
   ];
   const missing = buildQuestionObjects(project)
     .filter((question) => question.field !== 'next-step')
@@ -890,6 +943,11 @@ function normalizePayload(payload) {
     evaluation: clean(payload.evaluation),
     resources: clean(payload.resources),
     references: clean(payload.references),
+    uploadedReferences: clean(payload.uploadedReferences),
+    researcherMaterial: clean(payload.researcherMaterial),
+    overrideInstructions: clean(payload.overrideInstructions),
+    targetLanguage: clean(payload.targetLanguage) || 'English',
+    translationModel: clean(payload.translationModel),
     requirements: clean(payload.requirements) || DEFAULT_REQUIREMENTS
   };
 }
@@ -916,7 +974,13 @@ function findRequirementEvidence(requirement, project) {
   if (/evaluation|metric|test/.test(text) && project.evaluation) return project.evaluation;
   if (/risk|mitigation/.test(text)) return 'Fallback draft includes risks and mitigations.';
   if (/resource|budget|tool/.test(text) && project.resources) return project.resources;
-  if (/reference|assumption|source/.test(text) && project.references) return project.references;
+  if (/reference|assumption|source/.test(text) && (project.references || project.uploadedReferences)) {
+    return project.references || project.uploadedReferences;
+  }
+  if (/upload|paper|researcher|override|material|provided/.test(text) && (project.uploadedReferences || project.researcherMaterial || project.overrideInstructions)) {
+    return project.uploadedReferences || project.researcherMaterial || project.overrideInstructions;
+  }
+  if (/language|translation/.test(text) && project.targetLanguage) return `Target language: ${project.targetLanguage}`;
 
   return '';
 }
@@ -1070,6 +1134,10 @@ function latexParagraph(value) {
     .map((line) => line.trim())
     .filter(Boolean)
     .join('\n\n');
+}
+
+function latexInline(value) {
+  return escapeLatex(value || '');
 }
 
 function escapeLatex(value) {
