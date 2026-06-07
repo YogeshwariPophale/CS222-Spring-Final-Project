@@ -42,6 +42,7 @@ const TABS = [
   ['matrix', 'Matrix'],
   ['evaluation', 'Review'],
   ['analysis', 'Analysis']
+  ['evaluation', 'Review']
 ];
 
 function App() {
@@ -141,6 +142,7 @@ function App() {
         createLog('Draft', `Generated proposal using ${data.mode}.`),
         createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`),
         createLog('Score', `Analysis score ${analyzeProposal(project, data).scores.overall}/100.`)
+        createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
       ]);
     } catch (requestError) {
       setError(readError(requestError));
@@ -383,6 +385,7 @@ function App() {
                   {TABS.map(([id, label]) => (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : <FileText size={17} />}
                       {label}
                     </button>
                   ))}
@@ -816,4 +819,5 @@ function readError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+export default App;
 export default App;
