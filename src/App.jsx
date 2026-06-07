@@ -40,6 +40,8 @@ const TABS = [
   ['pdf', 'PDF'],
   ['latex', 'LaTeX'],
   ['matrix', 'Matrix'],
+  ['evaluation', 'Review'],
+  ['analysis', 'Analysis']
   ['evaluation', 'Review']
 ];
 
@@ -59,6 +61,7 @@ function App() {
   const coveredRows = result?.complianceMatrix?.filter((row) => /^covered$/i.test(row.status)).length || 0;
   const totalRows = result?.complianceMatrix?.length || 0;
   const acceptedCount = PROJECT_FIELDS.filter(([field]) => project[field]).length;
+  const analysis = result ? analyzeProposal(project, result, coveredRows, totalRows) : null;
 
   async function structureIdea(topic = topicInput) {
     const cleanTopic = topic.trim();
@@ -137,6 +140,8 @@ function App() {
       setRunLog((current) => [
         ...current,
         createLog('Draft', `Generated proposal using ${data.mode}.`),
+        createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`),
+        createLog('Score', `Analysis score ${analyzeProposal(project, data).scores.overall}/100.`)
         createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
       ]);
     } catch (requestError) {
@@ -379,6 +384,7 @@ function App() {
                 <nav className="tabs" aria-label="Generated artifacts">
                   {TABS.map(([id, label]) => (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : <FileText size={17} />}
                       {label}
                     </button>
@@ -413,7 +419,7 @@ function App() {
                 </div>
               </div>
 
-              {renderArtifact(activeTab, result, pdfUrl)}
+              {renderArtifact(activeTab, result, pdfUrl, analysis)}
             </section>
           </div>
         </section>
@@ -519,7 +525,7 @@ async function readResponseError(response, url) {
   }
 }
 
-function renderArtifact(activeTab, result, pdfUrl) {
+function renderArtifact(activeTab, result, pdfUrl, analysis) {
   if (!result) {
     return <EmptyState text="Proposal artifacts appear after Generate Proposal." />;
   }
@@ -572,7 +578,190 @@ function renderArtifact(activeTab, result, pdfUrl) {
     return <pre>{result.evaluationReport}</pre>;
   }
 
+  if (activeTab === 'analysis') {
+    return analysis ? <AnalysisPanel analysis={analysis} /> : <EmptyState text="Analysis appears after Generate Proposal." />;
+  }
+
   return <pre className="proposal-output">{result.proposalLatex}</pre>;
+}
+
+function AnalysisPanel({ analysis }) {
+  return (
+    <div className="analysis-wrap">
+      <section className="score-card">
+        <div className={`score-circle ${analysis.scores.gradeColor}`}>
+          <strong>{analysis.scores.overall}</strong>
+          <span>{analysis.scores.grade}</span>
+        </div>
+        <div>
+          <h3>Proposal Score</h3>
+          <p>{analysis.summary}</p>
+        </div>
+      </section>
+
+      <section className="analysis-section">
+        <h3>5-Dimension Scoring Breakdown</h3>
+        <div className="score-grid">
+          {analysis.dimensionScores.map((item) => (
+            <div className="score-item" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.score}/100</strong>
+              <div className="score-meter"><span style={{ width: `${item.score}%` }} /></div>
+              <small>{item.note}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="analysis-section">
+        <h3>Graduate Readiness</h3>
+        <div className="readiness-bar"><span style={{ width: `${analysis.graduateReadiness.readinessPercent}%` }} /></div>
+        <p><strong>{analysis.graduateReadiness.readinessPercent}% readiness</strong> — {analysis.graduateReadiness.readinessLevel}</p>
+        <ul className="analysis-checklist">
+          {analysis.graduateReadiness.checklist.map((item) => (
+            <li className={item.met ? 'met' : 'unmet'} key={item.name}>{item.met ? '✓' : '○'} {item.name}</li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="analysis-section">
+        <h3>Language Analysis</h3>
+        <div className="metric-row"><span>Academic tone</span><strong>{analysis.languageAnalysis.academicTone}/100</strong></div>
+        <div className="metric-row"><span>Technical terminology</span><strong>{analysis.languageAnalysis.technicalTermCount} terms</strong></div>
+        <div className="metric-row"><span>Readability</span><strong>{analysis.languageAnalysis.readability}/100</strong></div>
+        <div className="metric-row"><span>Average sentence length</span><strong>{analysis.languageAnalysis.averageSentenceLength} words</strong></div>
+        <p>{analysis.languageAnalysis.note}</p>
+      </section>
+
+      <section className="analysis-section">
+        <h3>Reference Validation</h3>
+        <div className="metric-row"><span>Reference count</span><strong>{analysis.referenceAnalysis.count}</strong></div>
+        <div className="metric-row"><span>Quality</span><strong>{analysis.referenceAnalysis.quality}</strong></div>
+        <ul>
+          {analysis.referenceAnalysis.suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}
+        </ul>
+      </section>
+
+      <section className="analysis-section">
+        <h3>Smart Recommendations</h3>
+        {analysis.recommendations.map((recommendation) => (
+          <article className={`recommendation ${recommendation.priority.toLowerCase()}`} key={recommendation.area}>
+            <strong>{recommendation.priority}: {recommendation.area}</strong>
+            <p>{recommendation.message}</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function analyzeProposal(project, result, coveredRows = countCovered(result?.complianceMatrix || []), totalRows = result?.complianceMatrix?.length || 0) {
+  const text = [project.title, project.problem, project.method, project.timeline, project.evaluation, project.resources, project.references, result?.proposalLatex].join(' ');
+  const wordCount = countWords(text);
+  const references = extractReferences(project.references);
+  const technicalTerms = countTechnicalTerms(text);
+  const sentenceStats = sentenceComplexity(text);
+  const completion = totalRows ? Math.round((coveredRows / totalRows) * 100) : 0;
+  const researchQuality = clamp(Math.round((project.problem ? 20 : 0) + (project.method ? 20 : 0) + (project.evaluation ? 20 : 0) + Math.min(references.length * 12, 40)));
+  const clarity = clamp(Math.round(72 + (project.problem ? 8 : 0) + (sentenceStats.averageLength > 28 ? -8 : 8)));
+  const technical = clamp(Math.round(Math.min(technicalTerms * 7, 55) + (project.method ? 25 : 0) + (project.evaluation ? 15 : 0)));
+  const referenceScore = clamp(Math.round(Math.min(references.length * 22, 80) + (/paper|citation|source|guide|feedback/i.test(project.references || '') ? 20 : 0)));
+  const completionScore = clamp(completion);
+  const overall = clamp(Math.round((researchQuality * 0.26) + (clarity * 0.18) + (technical * 0.2) + (referenceScore * 0.16) + (completionScore * 0.2)));
+  const grade = gradeForScore(overall);
+  const readinessChecklist = [
+    ['Clear research gap', Boolean(project.problem)],
+    ['Concrete method/workflow', Boolean(project.method)],
+    ['Evaluation plan', Boolean(project.evaluation)],
+    ['Timeline and milestones', Boolean(project.timeline)],
+    ['Resources/budget', Boolean(project.resources)],
+    ['Source notes/references', Boolean(project.references)],
+    ['Generated artifact review', Boolean(result?.complianceMatrix?.length)]
+  ];
+  const readinessMet = readinessChecklist.filter(([, met]) => met).length;
+
+  return {
+    summary: `Overall score ${overall}/100 based on proposal completeness, source grounding, technical detail, and language quality.`,
+    scores: { overall, grade, gradeColor: gradeColor(grade) },
+    dimensionScores: [
+      { label: 'Research Quality', score: researchQuality, note: 'Gap, method, evaluation, and source grounding.' },
+      { label: 'Clarity', score: clarity, note: 'Readable structure and sentence complexity.' },
+      { label: 'Technical Depth', score: technical, note: 'Workflow, evaluation, and technical terminology.' },
+      { label: 'References', score: referenceScore, note: 'Reference count and source-note quality.' },
+      { label: 'Completion', score: completionScore, note: `${coveredRows}/${totalRows || 0} checklist items covered.` }
+    ],
+    graduateReadiness: {
+      readinessPercent: Math.round((readinessMet / readinessChecklist.length) * 100),
+      readinessLevel: readinessMet >= 6 ? 'Ready for graduate-level revision' : readinessMet >= 4 ? 'Promising but needs refinement' : 'Needs major development',
+      checklist: readinessChecklist.map(([name, met]) => ({ name, met }))
+    },
+    languageAnalysis: {
+      academicTone: clamp(Math.round(65 + countMatches(text, /evaluate|proposal|method|evidence|research|workflow|criteria/gi) * 2)),
+      technicalTermCount: technicalTerms,
+      readability: clamp(Math.round(90 - Math.max(sentenceStats.averageLength - 18, 0) * 2)),
+      averageSentenceLength: sentenceStats.averageLength,
+      note: wordCount > 250 ? 'The draft has enough substance for review; revise long sentences for readability.' : 'Add more detail to improve academic depth and readability confidence.'
+    },
+    referenceAnalysis: {
+      count: references.length,
+      quality: references.length >= 4 ? 'Strong' : references.length >= 2 ? 'Developing' : 'Needs more sources',
+      suggestions: references.length >= 3
+        ? ['Connect each source to a specific claim.', 'Add citation details before final submission.']
+        : ['Add at least three relevant papers or proposal-writing sources.', 'Include source notes from seed papers or citation-graph exploration.']
+    },
+    recommendations: buildRecommendations({ project, references, overall, completionScore, technical, clarity })
+  };
+}
+
+function buildRecommendations({ project, references, overall, completionScore, technical, clarity }) {
+  const recommendations = [];
+  if (!project.evaluation) recommendations.push({ priority: 'High', area: 'Evaluation', message: 'Add concrete metrics, comparison baselines, and success criteria.' });
+  if (references.length < 3) recommendations.push({ priority: 'High', area: 'References', message: 'Add more source notes, seed papers, or Connected Papers-style evidence.' });
+  if (technical < 70) recommendations.push({ priority: 'Medium', area: 'Technical Depth', message: 'Describe the agent workflow, data flow, and review loop in more detail.' });
+  if (clarity < 75) recommendations.push({ priority: 'Medium', area: 'Clarity', message: 'Shorten long sentences and make each section start with a clear claim.' });
+  if (completionScore < 80) recommendations.push({ priority: 'High', area: 'Completion', message: 'Fill missing proposal requirements before recording or submitting.' });
+  if (overall >= 85) recommendations.push({ priority: 'Low', area: 'Polish', message: 'The draft is strong; focus on citations, examples, and final proofreading.' });
+  return recommendations.slice(0, 5);
+}
+
+function extractReferences(value) {
+  return String(value || '').split(/\n|;|\.|,/).map((item) => item.trim()).filter((item) => item.length > 8);
+}
+
+function countTechnicalTerms(text) {
+  return countMatches(text, /agent|workflow|evaluation|citation|retrieval|proposal|matrix|latex|pdf|model|source|rubric|prototype|revision|grounding/gi);
+}
+
+function sentenceComplexity(text) {
+  const sentences = String(text || '').split(/[.!?]+/).map((item) => item.trim()).filter(Boolean);
+  const words = countWords(text);
+  return { averageLength: sentences.length ? Math.round(words / sentences.length) : 0 };
+}
+
+function countWords(text) {
+  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function countMatches(text, pattern) {
+  return (String(text || '').match(pattern) || []).length;
+}
+
+function clamp(value) {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function gradeForScore(score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  return 'Needs Work';
+}
+
+function gradeColor(grade) {
+  if (grade === 'A') return 'grade-a';
+  if (grade === 'B') return 'grade-b';
+  if (grade === 'C') return 'grade-c';
+  return 'grade-needs-work';
 }
 
 function PanelHeader({ title, meta }) {
@@ -630,4 +819,5 @@ function readError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+export default App;
 export default App;
