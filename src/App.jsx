@@ -71,17 +71,24 @@ function App() {
   const requestBody = JSON.stringify(body);
   let lastError = null;
 
-  for (const apiUrl of candidateApiUrls(url)) {
-    try {
-      const data = await postJson('/api/agent/start', {
-        topic: cleanTopic,
-        requirements: DEFAULT_REQUIREMENTS
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: requestBody
-      });
-      const text = await response.text();
+for (const apiUrl of candidateApiUrls(url)) {
+  try {
+    const data = await postJson('/api/agent/start', {
+      topic: cleanTopic,
+      requirements: DEFAULT_REQUIREMENTS
+    });
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestBody
+    });
+
+    const text = await response.text();
+  } catch (error) {
+    console.error(error);
+  }
+}
 
       setTopicInput(cleanTopic);
       setProject({ ...EMPTY_PROJECT, ...data.project });
