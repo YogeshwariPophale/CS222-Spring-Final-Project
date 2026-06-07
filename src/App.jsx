@@ -42,6 +42,7 @@ const TABS = [
   ['matrix', 'Matrix'],
   ['evaluation', 'Review'],
   ['analysis', 'Analysis']
+  ['evaluation', 'Review']
 ];
 
 function App() {
@@ -383,6 +384,7 @@ function App() {
                   {TABS.map(([id, label]) => (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : <FileText size={17} />}
                       {label}
                     </button>
                   ))}

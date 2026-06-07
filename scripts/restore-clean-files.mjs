@@ -13,6 +13,7 @@ const filesToRestore = [
   'docs/STABLE_CHECKPOINT.md',
   'scripts/smoke-check.mjs',
   'package.json'
+  'docs/local_repair_guide.md'
 ];
 
 function run(command, args) {
