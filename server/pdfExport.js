@@ -23,15 +23,6 @@ export async function proposalLatexToPdf(latex, title = 'proposal') {
 
     try {
       await execFileAsync('tectonic', ['--outdir', workdir, texPath], {
-    await writeFile(texPath, sanitizeLatexForExport(ensureCompleteLatexDocument(source, title)), 'utf8');
-    
-    // Try pdflatex first
-    try {
-      await execFileAsync('pdflatex', [
-        '-interaction=nonstopmode',
-        '-output-directory=' + workdir,
-        texPath
-      ], {
         cwd: workdir,
         timeout: 60000,
         maxBuffer: 1024 * 1024 * 8
@@ -44,16 +35,6 @@ export async function proposalLatexToPdf(latex, title = 'proposal') {
         title,
         reason: compileError instanceof Error ? compileError.message : String(compileError)
       });
-      return await readFile(pdfPath);
-    } catch (pdflatexError) {
-      // If pdflatex fails, provide helpful message
-      console.warn('pdflatex not found. For PDF generation, install a LaTeX distribution (TeX Live, MiKTeX)');
-      throw new Error(
-        'PDF compilation requires a LaTeX compiler (pdflatex, xelatex, or tectonic). ' +
-        'Download the LaTeX source using the "Download LaTeX" button and compile it locally with your LaTeX distribution. ' +
-        'On Windows, install MiKTeX (https://miktex.org/) or TeX Live (https://tug.org/texlive/). ' +
-        'On macOS, install MacTeX. On Linux, install texlive package.'
-      );
     }
   } finally {
     await rm(workdir, { recursive: true, force: true });
