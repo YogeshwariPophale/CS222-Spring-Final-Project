@@ -60,91 +60,79 @@ function App() {
   const totalRows = result?.complianceMatrix?.length || 0;
   const acceptedCount = PROJECT_FIELDS.filter(([field]) => project[field]).length;
 
-  async function structureIdea(topic = topicInput) {
-    const cleanTopic = topic.trim();
-    if (!cleanTopic) return;
+  async function postJson(url, body) {
+  const requestBody = JSON.stringify(body);
+  let lastError = null;
 
-    setStatus('starting');
-    setError('');
-    clearArtifacts();
-
+  for (const apiUrl of candidateApiUrls(url)) {
     try {
-      const data = await postJson('/api/agent/start', {
-        topic: cleanTopic,
-        requirements: DEFAULT_REQUIREMENTS
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody
       });
+      const text = await response.text();
 
-      setTopicInput(cleanTopic);
-      setProject({ ...EMPTY_PROJECT, ...data.project });
-      setSuggestions(data.fieldSuggestions || []);
-      setDecisions(data.decisions || []);
-      setRunLog([
-        createLog('Extract', data.runMessage || 'Structured the rough idea.'),
-        createLog('Decide', `Loaded ${(data.fieldSuggestions || []).length} suggestion(s).`)
-      ]);
+      if (!text.trim()) {
+        lastError = new Error(`Empty response from ${apiUrl} (status ${response.status}).`);
+        continue;
+      }
+
+      const data = parseJsonResponse(text, apiUrl);
+
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
+      }
+
+      return data;
     } catch (requestError) {
-      setError(readError(requestError));
-    } finally {
-      setStatus('idle');
+      lastError = requestError;
     }
   }
 
-  function runSample() {
-    structureIdea('Citation-grounded agent for literature review workflows');
+  throw new Error(
+    `${readError(lastError)} Make sure the API terminal says "Proposal API listening on http://127.0.0.1:8787", then refresh the browser.`
+  );
+}
+
+function candidateApiUrls(url) {
+  if (!url.startsWith('/api')) return [url];
+  return [url, `http://127.0.0.1:8787${url}`];
+}
+
+function parseJsonResponse(text, url) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`);
   }
+}
 
-  function updateProjectField(field, value) {
-    setProject((current) => ({
-      ...current,
-      [field]: value,
-      topic: current.topic || current.title || topicInput
-    }));
-    clearArtifacts();
-  }
+async function exportPdfUrl(proposalLatex, title) {
+  const requestBody = JSON.stringify({ title, proposalLatex });
+  let lastError = null;
 
-  function acceptSuggestion(suggestion) {
-    updateProjectField(suggestion.field, suggestion.value);
-    setSuggestions((current) => current.filter((item) => item !== suggestion));
-    setRunLog((current) => [...current, createLog('Accept', `Accepted ${suggestion.label || suggestion.field}.`)]);
-  }
-
-  function skipSuggestion(suggestion) {
-    setSuggestions((current) => current.filter((item) => item !== suggestion));
-    setRunLog((current) => [...current, createLog('Skip', `Skipped ${suggestion.label || suggestion.field}.`)]);
-  }
-
-  function chooseDecision(decision, option) {
-    updateProjectField(decision.field, option.value);
-    setDecisions((current) => current.filter((item) => item.id !== decision.id));
-    setRunLog((current) => [...current, createLog('Decision', `Selected ${option.label} for ${decision.title}.`)]);
-  }
-
-  async function generateProposal() {
-    setStatus('drafting');
-    setError('');
-
+  for (const apiUrl of candidateApiUrls('/api/export/pdf')) {
     try {
-      const data = await postJson('/api/proposal', {
-        ...project,
-        topic: project.topic || project.title || topicInput,
-        requirements: DEFAULT_REQUIREMENTS
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody
       });
-      const nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
 
-      setResult(data);
-      updatePdfUrl(nextPdfUrl);
-      setActiveTab('pdf');
-      setRunLog((current) => [
-        ...current,
-        createLog('Draft', `Generated proposal using ${data.mode}.`),
-        createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
-      ]);
+      if (!response.ok) {
+        throw new Error(await readResponseError(response, apiUrl));
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
     } catch (requestError) {
-      setError(readError(requestError));
-    } finally {
-      setStatus('idle');
+      lastError = requestError;
     }
   }
+
+  throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
+}
 
   function downloadLatex() {
     if (!result?.proposalLatex) return;
