@@ -58,6 +58,12 @@ Open:
 http://127.0.0.1:5174
 ```
 
+If you are using VS Code's Simple Browser and the embedded PDF panel stays blank, click **Open Preview** in the app or open the same URL in Chrome/Edge/Firefox. Some VS Code webviews block inline PDF rendering even when PDF export works.
+
+PDF export first tries the local LaTeX compiler (`tectonic`) and falls back to a built-in readable PDF renderer if the compiler is unavailable, so the PDF button should still produce a file in basic local setups.
+
+If your local VS Code copy shows duplicate declarations, merge markers, or `Unexpected identifier 'writeFile'`, follow the [local repair guide](docs/local_repair_guide.md) to restore the clean files before running the app again.
+
 We encourage students to start with the [Gemini API free tier](https://ai.google.dev/gemini-api/docs/pricing). If the free tier is not enough for your project, email the TA at <yfu093@ucr.edu> to request additional API access. Keep all API keys out of GitHub and document your setup.
 
 ## Resources
@@ -90,6 +96,8 @@ Submit:
 - 5-minute presentation video or link;
 - mandatory in-person presentation for demonstration and feedback;
 - optional screenshots or interaction trace.
+
+The runnable app is kept clean for student/researcher use. Presentation notes, professor feedback, and follow-up tasks are tracked separately in [docs/WORK_NOTES.md](docs/WORK_NOTES.md). A Phase 1 demo artifact and recording outline is also available at [docs/stage_1_demo_artifact.md](docs/stage_1_demo_artifact.md).
 
 Details: [docs/stage_1_workflow_design.md](docs/stage_1_workflow_design.md)
 

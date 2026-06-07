@@ -9,7 +9,10 @@
     "dev:web": "vite --host 127.0.0.1 --port 5174",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4174",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "repair:local": "node scripts/restore-clean-files.mjs",
+    "check:app": "node --check server/pdfExport.js && node --check server/proposalGenerator.js && npm run build && npm run smoke:app",
+    "smoke:app": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
     "concurrently": "^9.2.1",
