@@ -53,6 +53,9 @@ function safePairs(items) {
     .map((item) => [String(item[0]), String(item[1] || item[0])]);
 }
 
+  ['evaluation', 'Review']
+];
+
 function App() {
   const [topicInput, setTopicInput] = useState('');
   const [project, setProject] = useState(EMPTY_PROJECT);
@@ -69,6 +72,7 @@ function App() {
   const coveredRows = result?.complianceMatrix?.filter((row) => /^covered$/i.test(row.status)).length || 0;
   const totalRows = result?.complianceMatrix?.length || 0;
   const acceptedCount = PROJECT_FIELD_PAIRS.filter((pair) => project[pair[0]]).length;
+  const acceptedCount = PROJECT_FIELDS.filter(([field]) => project[field]).length;
   const analysis = result ? analyzeProposal(project, result, coveredRows, totalRows) : null;
 
   async function structureIdea(topic = topicInput) {
@@ -365,6 +369,7 @@ function App() {
                 </label>
                 );
               })}
+              ))}
               <button className="primary" type="button" disabled={!project.title || busy} onClick={generateProposal}>
                 {status === 'drafting' ? <Loader2 className="spin" size={16} /> : <FileText size={16} />}
                 Generate Proposal
@@ -397,6 +402,10 @@ function App() {
                     return (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
+                  {TABS.map(([id, label]) => (
+                    <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
+                      {id === 'matrix' ? <ClipboardCheck size={17} /> : <FileText size={17} />}
                       {label}
                     </button>
                     );
@@ -517,6 +526,26 @@ async function exportPdfUrl(proposalLatex, title) {
     } catch (requestError) {
       lastError = requestError;
     }
+  }
+
+  throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
+}
+
+async function readResponseError(response, url) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return `The proposal API returned an empty error response for ${url} with status ${response.status}.`;
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return data.detail || data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`;
+  }
+}
+
   }
 
   throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
@@ -708,6 +737,7 @@ function analyzeProposal(project, result, coveredRows = countCovered(result?.com
       checklist: readinessChecklist
         .filter((item) => Array.isArray(item) && item.length >= 2)
         .map((item) => ({ name: item[0], met: Boolean(item[1]) }))
+      checklist: readinessChecklist.map(([name, met]) => ({ name, met }))
     },
     languageAnalysis: {
       academicTone: clamp(Math.round(65 + countMatches(text, /evaluate|proposal|method|evidence|research|workflow|criteria/gi) * 2)),
