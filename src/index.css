@@ -1271,6 +1271,42 @@ th {
 .recommendation.high { border-color: #edb8aa; }
 .recommendation.medium { border-color: #d4c38f; }
 .recommendation.low { border-color: #a7c9bb; }
+
+.app-error-shell {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.error-panel {
+  max-width: 760px;
+  border: 1px solid #efb8b8;
+  border-radius: 18px;
+  padding: 24px;
+  background: #fff7f7;
+  color: #5f2120;
+  box-shadow: 0 18px 42px rgba(95, 33, 32, 0.12);
+}
+
+.error-panel p {
+  line-height: 1.6;
+}
+
+.error-panel code,
+.error-panel pre {
+  border-radius: 8px;
+  background: #ffffff;
+  color: #7a1d1d;
+}
+
+.error-panel code {
+  padding: 2px 5px;
+}
+
+.error-panel pre {
+  overflow-x: auto;
+  padding: 12px;
+  white-space: pre-wrap;
 /* Analysis Panel Styles */
 .analysis-wrap {
   display: flex;
