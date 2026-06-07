@@ -28,6 +28,11 @@ If the repair script is not available in your local copy yet, run these manual c
 ```powershell
 git status
 git restore src/App.jsx server/pdfExport.js server/proposalGenerator.js src/index.css README.md docs/WORK_NOTES.md docs/stage_1_demo_artifact.md docs/local_repair_guide.md
+Run these commands in PowerShell from the repository folder:
+
+```powershell
+git status
+git restore src/App.jsx server/pdfExport.js server/proposalGenerator.js README.md docs/WORK_NOTES.md docs/stage_1_demo_artifact.md
 npm.cmd install
 npm.cmd run dev
 ```
