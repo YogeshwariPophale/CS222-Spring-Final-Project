@@ -67,12 +67,21 @@ function App() {
     setStatus('starting');
     setError('');
     clearArtifacts();
+  async function postJson(url, body) {
+  const requestBody = JSON.stringify(body);
+  let lastError = null;
 
+  for (const apiUrl of candidateApiUrls(url)) {
     try {
       const data = await postJson('/api/agent/start', {
         topic: cleanTopic,
         requirements: DEFAULT_REQUIREMENTS
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody
       });
+      const text = await response.text();
 
       setTopicInput(cleanTopic);
       setProject({ ...EMPTY_PROJECT, ...data.project });
@@ -139,12 +148,66 @@ function App() {
         createLog('Draft', `Generated proposal using ${data.mode}.`),
         createLog('Review', `Coverage ${countCovered(data.complianceMatrix)}/${data.complianceMatrix?.length || 0}.`)
       ]);
+      if (!text.trim()) {
+        lastError = new Error(`Empty response from ${apiUrl} (status ${response.status}).`);
+        continue;
+      }
+
+      const data = parseJsonResponse(text, apiUrl);
+
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
+      }
+
+      return data;
     } catch (requestError) {
-      setError(readError(requestError));
-    } finally {
-      setStatus('idle');
+      lastError = requestError;
     }
   }
+
+  throw new Error(
+    `${readError(lastError)} Make sure the API terminal says "Proposal API listening on http://127.0.0.1:8787", then refresh the browser.`
+  );
+}
+
+function candidateApiUrls(url) {
+  if (!url.startsWith('/api')) return [url];
+  return [url, `http://127.0.0.1:8787${url}`];
+}
+
+function parseJsonResponse(text, url) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`);
+  }
+}
+
+async function exportPdfUrl(proposalLatex, title) {
+  const requestBody = JSON.stringify({ title, proposalLatex });
+  let lastError = null;
+
+  for (const apiUrl of candidateApiUrls('/api/export/pdf')) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody
+      });
+
+      if (!response.ok) {
+        throw new Error(await readResponseError(response, apiUrl));
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (requestError) {
+      lastError = requestError;
+    }
+  }
+
+  throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
+}
 
   function downloadLatex() {
     if (!result?.proposalLatex) return;
@@ -458,6 +521,23 @@ async function postJson(url, body) {
     } catch (requestError) {
       lastError = requestError;
     }
+  let response;
+
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new Error(`Cannot reach the proposal API at ${url}. Make sure npm.cmd run dev is still running.`);
+  }
+
+  const text = await response.text();
+  const data = parseJsonResponse(text, url);
+
+  if (!response.ok) {
+    throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
   }
 
   throw new Error(
@@ -471,6 +551,18 @@ function candidateApiUrls(url) {
 }
 
 function parseJsonResponse(text, url) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`);
+  }
+}
+
+function parseJsonResponse(text, url) {
+  if (!text.trim()) {
+    throw new Error(`The proposal API returned an empty response for ${url}. Restart npm.cmd run dev and check the API terminal output.`);
+  }
+
   try {
     return JSON.parse(text);
   } catch {
@@ -502,6 +594,35 @@ async function exportPdfUrl(proposalLatex, title) {
   }
 
   throw new Error(`${readError(lastError)} Make sure npm.cmd run dev is still running.`);
+}
+
+async function readResponseError(response, url) {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return `The proposal API returned an empty error response for ${url} with status ${response.status}.`;
+  let response;
+
+  try {
+    response = await fetch('/api/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, proposalLatex })
+    });
+  } catch {
+    throw new Error('Cannot reach the PDF export API. Make sure npm.cmd run dev is still running.');
+  }
+
+  if (!response.ok) {
+    throw new Error(await readResponseError(response, '/api/export/pdf'));
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return data.detail || data.error || `Request failed with status ${response.status}.`;
+  } catch {
+    return `The proposal API returned non-JSON for ${url}: ${text.slice(0, 180)}`;
+  }
 }
 
 async function readResponseError(response, url) {
@@ -630,4 +751,5 @@ function readError(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+export default App;
 export default App;

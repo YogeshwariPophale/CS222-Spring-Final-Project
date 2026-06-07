@@ -28,6 +28,11 @@ If the repair script is not available in your local copy yet, run these manual c
 ```powershell
 git status
 git restore src/App.jsx server/pdfExport.js server/proposalGenerator.js src/index.css README.md docs/WORK_NOTES.md docs/stage_1_demo_artifact.md docs/local_repair_guide.md
+Run these commands in PowerShell from the repository folder:
+
+```powershell
+git status
+git restore src/App.jsx server/pdfExport.js server/proposalGenerator.js README.md docs/WORK_NOTES.md docs/stage_1_demo_artifact.md
 npm.cmd install
 npm.cmd run dev
 ```
@@ -70,6 +75,7 @@ In the clean version:
 
 - `server/pdfExport.js` imports `writeFile` at the top from `node:fs/promises` and writes the `.tex` file inside `proposalLatexToPdf`.
 - `src/App.jsx` uses the simplified project form and does not include target-language dropdown code.
+- `src/App.jsx` has a single target-language dropdown list.
 - `src/App.jsx` does not contain merge markers such as `<<<<<<<`, `=======`, or `>>>>>>>`.
 - `src/App.jsx` does not contain duplicated `import { useEffect... }` blocks.
 
