@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import { proposalLatexToPdf } from './pdfExport.js';
 import { answerAgentQuestion, generateProposal, startAgentSession } from './proposalGenerator.js';
+import { analyzeProposal, validateReferences } from './proposalAnalyzer.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -67,6 +68,32 @@ app.post('/api/proposal', async (request, response) => {
   } catch (error) {
     response.status(500).json({
       error: 'Proposal generation failed.',
+      detail: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/api/analyze/proposal', async (request, response) => {
+  try {
+    const payload = request.body || {};
+    const analysis = analyzeProposal(payload, payload.complianceMatrix || []);
+    response.json(analysis);
+  } catch (error) {
+    response.status(500).json({
+      error: 'Proposal analysis failed.',
+      detail: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/api/validate/references', async (request, response) => {
+  try {
+    const payload = request.body || {};
+    const validation = validateReferences(payload.references);
+    response.json(validation);
+  } catch (error) {
+    response.status(500).json({
+      error: 'Reference validation failed.',
       detail: error instanceof Error ? error.message : String(error)
     });
   }

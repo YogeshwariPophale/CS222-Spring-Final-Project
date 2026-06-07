@@ -24,7 +24,10 @@ const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Evaluation plan
 - Risks and mitigation
 - Resources or budget
-- References, assumptions, or source notes`;
+- References, assumptions, or source notes
+- Uploaded reference paper notes when available
+- Researcher-provided material or override notes when available
+- Target language or translation instructions when requested`;
 
 const EMPTY_PROJECT = {
   title: '',
@@ -35,6 +38,11 @@ const EMPTY_PROJECT = {
   evaluation: '',
   resources: '',
   references: '',
+  uploadedReferences: '',
+  researcherMaterial: '',
+  overrideInstructions: '',
+  targetLanguage: 'English',
+  translationModel: '',
   requirements: DEFAULT_REQUIREMENTS
 };
 
@@ -44,7 +52,10 @@ const PROJECT_FIELDS = [
   ['evaluation', 'Evaluation'],
   ['timeline', 'Timeline'],
   ['resources', 'Resources'],
-  ['references', 'Sources']
+  ['references', 'Sources'],
+  ['uploadedReferences', 'Uploaded Reference Notes'],
+  ['researcherMaterial', 'Researcher Material'],
+  ['overrideInstructions', 'Override Instructions']
 ];
 
 const STAGES = [
@@ -62,9 +73,50 @@ const TABS = [
   ['evaluation', ListChecks, 'Review']
 ];
 
+const TARGET_LANGUAGE_OPTIONS = [
+  'English',
+  'Spanish',
+  'Hindi',
+  'Chinese',
+  'French',
+  'German',
+  'Arabic',
+  'Portuguese',
+  'Japanese',
+  'Korean',
+  'Italian',
+  'Russian',
+  'Bengali',
+  'Urdu',
+  'Tamil',
+  'Telugu',
+  'Marathi',
+  'Gujarati'
+];
+
 const MEMORY_KEY = 'proposal-agent-final-project-memory-v1';
 
 
+const TARGET_LANGUAGE_OPTIONS = [
+  'English',
+  'Spanish',
+  'Hindi',
+  'Chinese',
+  'French',
+  'German',
+  'Arabic',
+  'Portuguese',
+  'Japanese',
+  'Korean',
+  'Italian',
+  'Russian',
+  'Bengali',
+  'Urdu',
+  'Tamil',
+  'Telugu',
+  'Marathi',
+  'Gujarati'
+];
 
 
 function App() {
@@ -219,6 +271,7 @@ function App() {
         topic: project.topic || project.title,
         requirements: DEFAULT_REQUIREMENTS
       });
+
       const nextPdfUrl = await exportPdfUrl(data.proposalLatex, project.title || 'proposal');
 
       setResult(data);
@@ -279,6 +332,34 @@ function App() {
       topic: current.topic || current.title || topicInput
     }));
     clearArtifacts();
+  }
+
+  async function uploadReferenceFiles(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    setStatus('uploading');
+    setError('');
+
+    try {
+      const notes = await Promise.all(files.map(readReferenceFile));
+      const fileList = files.map((file) => file.name).join(', ');
+      const nextNote = notes.join('\n\n');
+
+      setProject((current) => ({
+        ...current,
+        uploadedReferences: mergeText(current.uploadedReferences, nextNote),
+        references: mergeText(current.references, `Uploaded reference files: ${fileList}`),
+        topic: current.topic || current.title || topicInput
+      }));
+      clearArtifacts();
+      setRunLog((current) => [...current, logEntry('Sources', `Uploaded ${files.length} reference file(s): ${fileList}.`)]);
+    } catch (uploadError) {
+      setError(readError(uploadError));
+    } finally {
+      event.target.value = '';
+      setStatus('idle');
+    }
   }
 
   function clearArtifacts() {
@@ -690,12 +771,61 @@ function App() {
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
               </label>
+
+              <div className="language-controls">
+                <label>
+                  Target Language
+                  <select
+                    value={project.targetLanguage || 'English'}
+                    onChange={(event) => updateProjectField('targetLanguage', event.target.value)}
+                  >
+                    {TARGET_LANGUAGE_OPTIONS.map((language) => (
+                      <option value={language} key={language}>
+                        {language}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Translation Model / Engine
+                  <input
+                    value={project.translationModel || ''}
+                    onChange={(event) => updateProjectField('translationModel', event.target.value)}
+                    placeholder="Optional: DeepL, human review, or api:gemini-model-id"
+                  />
+                </label>
+              </div>
+
+              <section className="reference-upload-card">
+                <div>
+                  <h3>Upload Reference Papers</h3>
+                  <p>
+                    Add PDFs, BibTeX/RIS files, or text notes. Text-like files are copied into the reference notes; PDF
+                    filenames are recorded so you can paste abstracts or key excerpts below.
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.bib,.ris,.csv,.tex"
+                  onChange={uploadReferenceFiles}
+                  disabled={status !== 'idle'}
+                />
+              </section>
+
+              <p className="override-help">
+                Every field below is editable: keep the generated text, replace it with your own material, or add override
+                instructions that the agent must respect when drafting.
+              </p>
+
               {PROJECT_FIELDS.map(([field, label]) => (
                 <label key={field}>
                   {label}
                   <textarea value={project[field] || ''} onChange={(event) => updateProjectField(field, event.target.value)} />
                 </label>
               ))}
+
               <button className="primary" disabled={!project.title || status !== 'idle'} onClick={generateProposal} type="button">
                 {status === 'drafting' ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
                 Generate Proposal
@@ -724,14 +854,17 @@ function App() {
                     </button>
                   ))}
                 </nav>
+
                 <button className="secondary" type="button" disabled={!result?.proposalLatex} onClick={downloadLatex}>
                   <Download size={17} aria-hidden="true" />
                   LaTeX
                 </button>
+
                 <button className="secondary" type="button" disabled={!result?.proposalLatex || status !== 'idle'} onClick={openPdfPreview}>
                   {status === 'exporting' ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <FileText size={17} aria-hidden="true" />}
                   Open Preview
                 </button>
+
                 <button
                   className="primary"
                   type="button"
@@ -767,6 +900,43 @@ function App() {
   );
 }
 
+async function readReferenceFile(file) {
+  const header = `Reference file: ${file.name} (${file.type || 'unknown type'}, ${formatBytes(file.size)})`;
+  const textLike = /^(text\/|application\/(x-bibtex|json|xml|x-research-info-systems))/i.test(file.type)
+    || /\.(txt|md|bib|ris|csv|tex)$/i.test(file.name);
+
+  if (!textLike) {
+    return `${header}
+PDF or binary upload recorded. Paste the abstract, citation, or important excerpts here if text extraction is needed.`;
+  }
+
+  const text = await file.text();
+  const trimmed = text.trim().slice(0, 12000);
+  return `${header}
+${trimmed || 'File was empty.'}`;
+}
+
+function mergeText(current, addition) {
+  const base = String(current || '').trim();
+  const next = String(addition || '').trim();
+  if (!next) return base;
+  if (!base) return next;
+
+  if (!next) return base;
+  if (!base) return next;
+
+  return `${base}
+
+${next}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 async function postJson(url, body) {
   let response;
 
@@ -782,6 +952,13 @@ async function postJson(url, body) {
 
   const text = await response.text();
   const data = parseJsonResponse(text, url);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  const data = await response.json();
 
   if (!response.ok) {
     throw new Error(data?.detail || data?.error || `Request failed with status ${response.status}.`);
@@ -923,6 +1100,7 @@ function stageStatus(index, fieldSuggestions, decisions, project, result) {
   if (index === 1 && decisions.length) return 'status-complete';
   if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'status-complete';
   if (index >= 3 && result) return 'status-complete';
+
   return 'status-waiting';
 }
 
@@ -931,6 +1109,7 @@ function stageLabel(index, fieldSuggestions, decisions, project, result) {
   if (index === 1 && decisions.length) return 'Shown';
   if (index === 2 && PROJECT_FIELDS.some(([field]) => project[field])) return 'Shown';
   if (index >= 3 && result) return 'Shown';
+
   return 'Ready';
 }
 
