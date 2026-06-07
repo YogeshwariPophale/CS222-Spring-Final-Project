@@ -13,7 +13,6 @@
     "repair:local": "node scripts/restore-clean-files.mjs",
     "check:app": "node --check server/pdfExport.js && node --check server/proposalGenerator.js && npm run build && npm run smoke:app",
     "smoke:app": "node scripts/smoke-check.mjs"
-    "check:app": "node --check server/pdfExport.js && node --check server/proposalGenerator.js && npm run build"
   },
   "dependencies": {
     "concurrently": "^9.2.1",

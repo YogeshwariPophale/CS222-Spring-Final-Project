@@ -361,4 +361,4 @@ function latexEscape(value) {
     .replace(/~/g, '\\textasciitilde{}')
     .replace(/\^/g, '\\textasciicircum{}');
 }
-}
+
