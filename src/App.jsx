@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, Download, FileText, Loader2, Play, RefreshCw, Sparkles } from 'lucide-react';
 
 const DEFAULT_REQUIREMENTS = `Proposal must include:
@@ -46,6 +46,7 @@ const TABS = [
 
 const PROJECT_FIELD_PAIRS = safePairs(PROJECT_FIELDS);
 const TAB_PAIRS = safePairs(TABS);
+const API_BASE_URL = normalizeApiBase(import.meta.env.VITE_API_URL || 'http://127.0.0.1:8787');
 
 function safePairs(items) {
   return (Array.isArray(items) ? items : [])
@@ -71,6 +72,12 @@ function App() {
   const totalRows = result?.complianceMatrix?.length || 0;
   const acceptedCount = PROJECT_FIELD_PAIRS.filter((pair) => project[pair[0]]).length;
   const analysis = result ? analyzeProposal(project, result, coveredRows, totalRows) : null;
+
+  useEffect(() => {
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    };
+  }, [pdfUrl]);
 
   async function structureIdea(topic = topicInput) {
     const cleanTopic = topic.trim();
@@ -393,7 +400,7 @@ function App() {
             <section className="workflow-panel artifacts-panel">
               <div className="artifact-toolbar">
                 <nav className="tabs" aria-label="Generated artifacts">
-                  {TABS.map(([id, label]) => (
+                  {TAB_PAIRS.map(([id, label]) => (
                     <button key={id} className={activeTab === id ? 'tab active' : 'tab'} type="button" onClick={() => setActiveTab(id)}>
                       {id === 'matrix' ? <ClipboardCheck size={17} /> : id === 'analysis' ? <Sparkles size={17} /> : <FileText size={17} />}
                       {label}
@@ -483,7 +490,15 @@ async function postJson(url, body) {
 
 function candidateApiUrls(url) {
   if (!url.startsWith('/api')) return [url];
-  return [url, `http://127.0.0.1:8787${url}`];
+  return uniqueItems([url, `${API_BASE_URL}${url}`]);
+}
+
+function normalizeApiBase(value) {
+  return String(value || '').replace(/\/+$/, '') || 'http://127.0.0.1:8787';
+}
+
+function uniqueItems(items) {
+  return [...new Set(items.filter(Boolean))];
 }
 
 function parseJsonResponse(text, url) {
@@ -629,7 +644,7 @@ function AnalysisPanel({ analysis }) {
         <p><strong>{analysis.graduateReadiness.readinessPercent}% readiness</strong> — {analysis.graduateReadiness.readinessLevel}</p>
         <ul className="analysis-checklist">
           {analysis.graduateReadiness.checklist.map((item) => (
-            <li className={item.met ? 'met' : 'unmet'} key={item.name}>{item.met ? '✓' : '○'} {item.name}</li>
+            <li className={item.met ? 'met' : 'unmet'} key={item.name}>{item.met ? 'Yes' : 'No'}: {item.name}</li>
           ))}
         </ul>
       </section>

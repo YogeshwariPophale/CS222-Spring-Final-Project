@@ -1,12 +1,17 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { proposalLatexToPdf } from './pdfExport.js';
 import { answerAgentQuestion, generateProposal, startAgentSession } from './proposalGenerator.js';
 import { analyzeProposal, validateReferences } from './proposalAnalyzer.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.resolve(__dirname, '..', 'dist');
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({ limit: '1mb' }));
@@ -123,6 +128,18 @@ app.post('/api/export/pdf', async (request, response) => {
   }
 });
 
+if (existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get(/.*/, (_request, response) => {
+    response.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
 app.listen(port, () => {
   console.log(`Proposal API listening on http://127.0.0.1:${port}`);
+  if (existsSync(distDir)) {
+    console.log(`Website available at http://127.0.0.1:${port}`);
+  } else {
+    console.log('Build the website with "npm.cmd run build" before using npm.cmd start for production.');
+  }
 });
