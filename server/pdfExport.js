@@ -42,8 +42,9 @@ export async function proposalLatexToPdf(latex, title = 'proposal') {
 }
 
 function renderFallbackPdf({ latex, title, reason }) {
+  const isIeee = /\\documentclass(?:\[[^\]]*\])?\{IEEEtran\}|\\IEEEauthorblockN|IEEEkeywords/.test(latex);
   const lines = latexToPlainText(latex, title, reason);
-  const pages = paginateLines(lines, 54);
+  const pages = paginateLines(lines, isIeee ? 96 : 54);
   const objects = [];
   const addObject = (body) => {
     objects.push(body);
@@ -52,11 +53,11 @@ function renderFallbackPdf({ latex, title, reason }) {
 
   const catalogId = addObject('');
   const pagesId = addObject('');
-  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
   const pageIds = [];
 
   pages.forEach((pageLines) => {
-    const content = buildPageContent(pageLines);
+    const content = isIeee ? buildIeeeFallbackPageContent(pageLines) : buildPageContent(pageLines);
     const contentId = addObject(`<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`);
     const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
     pageIds.push(pageId);
@@ -69,10 +70,20 @@ function renderFallbackPdf({ latex, title, reason }) {
 }
 
 function latexToPlainText(latex, title, reason) {
+  const isIeee = /\\documentclass(?:\[[^\]]*\])?\{IEEEtran\}|\\IEEEauthorblockN|IEEEkeywords/.test(latex);
   const body = String(latex || '')
     .replace(/\\begin\{document\}|\\end\{document\}/g, '')
     .replace(/\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/g, '')
     .replace(/\\usepackage(?:\[[^\]]*\])?\{[^}]+\}/g, '')
+    .replace(/\\IEEEoverridecommandlockouts/g, '')
+    .replace(/\\IEEEauthorblockN\{([^}]*)\}/g, '$1\n')
+    .replace(/\\IEEEauthorblockA\{([^}]*)\}/g, '$1\n')
+    .replace(/\\begin\{IEEEkeywords\}/g, '\nKeywords: ')
+    .replace(/\\end\{IEEEkeywords\}/g, '\n')
+    .replace(/\\caption\{([^}]*)\}/g, 'Caption: $1\n')
+    .replace(/\\label\{[^}]*\}/g, '')
+    .replace(/\\bibitem\{[^}]*\}/g, '\n')
+    .replace(/\\def\\BibTeX\{[\s\S]*?\}/g, '')
     .replace(/\\setlist\{[^}]+\}/g, '')
     .replace(/\\title\{([^}]*)\}/g, 'Title: $1\n')
     .replace(/\\section\{([^}]*)\}/g, '\n$1\n')
@@ -93,12 +104,16 @@ function latexToPlainText(latex, title, reason) {
 
   const header = [
     title || 'proposal',
-    'PDF preview generated with the built-in fallback renderer.',
-    `LaTeX compiler note: ${String(reason || 'tectonic unavailable').slice(0, 180)}`,
+    ...(isIeee
+      ? []
+      : [
+          'PDF preview generated with the built-in fallback renderer.',
+          `LaTeX compiler note: ${String(reason || 'tectonic unavailable').slice(0, 180)}`
+        ]),
     ''
   ];
 
-  return [...header, ...wrapText(body, 92)];
+  return [...header, ...wrapText(body, isIeee ? 52 : 92)];
 }
 
 function wrapText(text, width) {
@@ -141,6 +156,37 @@ function buildPageContent(lines) {
   const commands = ['BT', '/F1 10 Tf', '50 750 Td', '14 TL'];
 
   lines.forEach((line, index) => {
+    if (index > 0) commands.push('T*');
+    commands.push(`(${escapePdfText(line)}) Tj`);
+  });
+
+  commands.push('ET');
+  return commands.join('\n');
+}
+
+function buildIeeeFallbackPageContent(lines) {
+  const titleIndex = lines.findIndex((line) => /^Title:\s*/.test(line));
+  const title = titleIndex >= 0 ? lines[titleIndex].replace(/^Title:\s*/, '') : lines[0] || 'IEEE Proposal Draft';
+  const bodyLines = lines
+    .filter((line, index) => index !== titleIndex)
+    .filter((line) => !/^Proposal Draft$|^Generated Research Proposal$|^Local Proposal Agent Workflow$|^IEEE-style two-column PDF preview/.test(line))
+    .slice(0, 94);
+  const leftLines = bodyLines.slice(0, 47);
+  const rightLines = bodyLines.slice(47, 94);
+  const titleX = Math.max(56, 306 - Math.min(title.length, 80) * 3.2);
+  const commands = ['BT', '/F1 14 Tf', `${titleX.toFixed(1)} 748 Td`, `(${escapePdfText(title)}) Tj`, 'ET'];
+
+  commands.push('BT', '/F1 8 Tf', '234 724 Td', '(Proposal Draft) Tj', 'T*', '(Generated Research Proposal) Tj', 'ET');
+  commands.push('BT', '/F1 8.5 Tf', '42 690 Td', '10.5 TL');
+
+  leftLines.forEach((line, index) => {
+    if (index > 0) commands.push('T*');
+    commands.push(`(${escapePdfText(line)}) Tj`);
+  });
+
+  commands.push('ET', 'BT', '/F1 8.5 Tf', '318 690 Td', '10.5 TL');
+
+  rightLines.forEach((line, index) => {
     if (index > 0) commands.push('T*');
     commands.push(`(${escapePdfText(line)}) Tj`);
   });
@@ -257,8 +303,9 @@ function normalizeCompleteLatexDocument(source) {
 function ensureDefaultPreamble(lines) {
   const source = lines.join('\n');
   const next = [...lines];
+  const isIeee = /\\documentclass(?:\[[^\]]*\])?\{IEEEtran\}/.test(source);
 
-  if (!/\\usepackage(?:\[[^\]]*\])?\{geometry\}/.test(source)) {
+  if (!isIeee && !/\\usepackage(?:\[[^\]]*\])?\{geometry\}/.test(source)) {
     next.push('\\usepackage[margin=1in]{geometry}');
   }
 
@@ -266,7 +313,7 @@ function ensureDefaultPreamble(lines) {
     next.push('\\usepackage[hidelinks]{hyperref}');
   }
 
-  if (!/\\usepackage(?:\[[^\]]*\])?\{enumitem\}/.test(source)) {
+  if (!isIeee && !/\\usepackage(?:\[[^\]]*\])?\{enumitem\}/.test(source)) {
     next.push('\\usepackage{enumitem}');
   }
 

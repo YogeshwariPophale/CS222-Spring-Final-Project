@@ -27,25 +27,27 @@ function analyzeReferences(proposal) {
   const method = String(proposal.method || '').trim();
   const evaluation = String(proposal.evaluation || '').trim();
 
-  const refLines = references.split('\n').filter(line => line.trim().length > 0);
-  const citationPatterns = /\((?:Smith|Jones|et al\.?\s+\d{4}|20\d{2})\)/gi;
+  const refLines = references.split(/\n|;/).filter(line => line.trim().length > 18);
+  const citationPatterns = /\((?:[A-Z][A-Za-z-]+(?:\s+et al\.)?,\s*)?(?:19|20)\d{2}\)|\[(?:\d+)\]/gi;
   const citationsInText = (problem + method + evaluation).match(citationPatterns) || [];
 
-  const hasAPA = /^\[\d+\]/m.test(references) || /\(\w+,\s*\d{4}\)/m.test(references);
-  const hasProperFormat = hasAPA || /et al\./i.test(references) || refLines.length > 0;
+  const hasAPA = /^\[\d+\]/m.test(references) || /\([A-Z][A-Za-z-]+,\s*(?:19|20)\d{2}\)/m.test(references);
+  const hasLinks = /https?:|doi/i.test(references);
+  const hasProperFormat = hasAPA || (/et al\./i.test(references) && /\b(?:19|20)\d{2}\b/.test(references));
 
   const referenceScore = Math.min(100, Math.max(0, 
-    (refLines.length * 8) + 
-    (citationsInText.length > 0 ? 20 : 0) +
-    (hasProperFormat ? 30 : 0) +
-    (references.length > 200 ? 20 : 0)
+    Math.min(refLines.length * 8, 48) +
+    Math.min(citationsInText.length * 8, 16) +
+    (hasProperFormat ? 18 : 0) +
+    (hasLinks ? 12 : 0) +
+    (/claim|supports|evidence|source note|ground/i.test(references) ? 6 : 0)
   ));
 
   return {
     count: refLines.length,
     citationsInText: citationsInText.length,
     hasProperFormat,
-    quality: referenceScore >= 80 ? 'Excellent' : referenceScore >= 60 ? 'Good' : referenceScore >= 40 ? 'Adequate' : 'Needs Improvement',
+    quality: referenceScore >= 85 ? 'Excellent' : referenceScore >= 70 ? 'Good' : referenceScore >= 50 ? 'Adequate' : 'Needs Improvement',
     score: Math.round(referenceScore),
     suggestions: generateReferenceSuggestions(refLines, citationsInText.length)
   };
@@ -54,13 +56,13 @@ function analyzeReferences(proposal) {
 function generateReferenceSuggestions(refLines, citationCount) {
   const suggestions = [];
   
-  if (refLines.length < 10) {
-    suggestions.push('Add more references (typically 10-20+ for graduate proposals)');
+  if (refLines.length < 5) {
+    suggestions.push('Add at least five credible references or source notes');
   }
   if (citationCount === 0) {
     suggestions.push('Cite references in problem and method sections to support claims');
   }
-  if (refLines.length > 0 && !refLines[0].includes('http') && !refLines[0].includes('doi')) {
+  if (refLines.length > 0 && !refLines.some((ref) => /http|doi/i.test(ref))) {
     suggestions.push('Include DOI or URL links for verifiability');
   }
   
@@ -101,10 +103,12 @@ function analyzeLanguage(proposal) {
   const avgWordLength = allText.replace(/\s/g, '').length / Math.max(words.length, 1);
 
   // Scoring
-  const technicalDepth = Math.min(100, (technicalTermCount / 5) * 25);
-  const academicTone = Math.min(100, (academicMarkerCount / 6) * 30);
-  const readability = Math.min(100, Math.max(0, 100 - (avgSentenceLength - 15) * 2));
-  const complexity = avgWordLength > 5 ? 75 : avgWordLength > 4.5 ? 60 : 40;
+  const technicalDepth = Math.min(100, (technicalTermCount / 10) * 100);
+  const academicTone = Math.min(100, (academicMarkerCount / 12) * 100);
+  const readability = avgSentenceLength >= 12 && avgSentenceLength <= 28
+    ? 90
+    : Math.min(70, Math.max(20, 90 - Math.abs(avgSentenceLength - 20) * 4));
+  const complexity = avgWordLength > 5.2 ? 85 : avgWordLength > 4.7 ? 70 : 45;
 
   const languageScore = Math.round((technicalDepth + academicTone + readability + complexity) / 4);
 
@@ -133,8 +137,8 @@ function analyzeTimeline(proposal) {
 
   // Check for realistic graduate timeline
   const isRealistic = months >= 4 && months <= 36; // 4 months to 3 years
-  const hasMilestones = /phase|stage|quarter|month|year \d+/i.test(timeline);
-  const hasDeliverables = /deliverable|output|result|publication/i.test(timeline);
+  const hasMilestones = /phase|stage|quarter|month|week|year \d+|milestone/i.test(timeline);
+  const hasDeliverables = /deliverable|output|result|publication|prototype|draft|test|revision/i.test(timeline);
 
   return {
     estimatedMonths: months,
@@ -199,10 +203,16 @@ function calculateProposalScores(proposal, complianceMatrix, refAnalysis, langAn
 }
 
 function calculateCompletionScore(proposal, complianceMatrix) {
-  const required = ['title', 'problem', 'method', 'evaluation', 'references', 'timeline'];
-  const completed = required.filter(field => 
-    String(proposal[field] || '').trim().length > 50
-  ).length;
+  const required = [
+    ['title', 15],
+    ['problem', 280],
+    ['method', 360],
+    ['evaluation', 280],
+    ['references', 160],
+    ['timeline', 140],
+    ['resources', 120]
+  ];
+  const completed = required.filter(([field, minLength]) => String(proposal[field] || '').trim().length >= minLength).length;
 
   const complianceScore = complianceMatrix.length > 0
     ? (complianceMatrix.filter(r => /covered/i.test(r.status)).length / complianceMatrix.length) * 50
@@ -216,9 +226,9 @@ function calculateTechnicalScore(proposal, langAnalysis) {
   const evaluationText = String(proposal.evaluation || '').length;
   const resourcesText = String(proposal.resources || '').length;
 
-  const detailScore = Math.min(100, (methodText / 100) * 40);
-  const evaluationScore = Math.min(100, (evaluationText / 100) * 30);
-  const resourceScore = Math.min(100, (resourcesText / 100) * 30);
+  const detailScore = Math.min(100, (methodText / 550) * 100);
+  const evaluationScore = Math.min(100, (evaluationText / 420) * 100);
+  const resourceScore = Math.min(100, (resourcesText / 220) * 100);
 
   return Math.round(
     (langAnalysis.technicalDepth * 0.4) +
@@ -235,27 +245,28 @@ function calculateResearchQuality(proposal) {
 
   // Novelty markers
   const noveltyMarkers = /novel|new|first|propose|extend|improve|enhance|innovative/i;
-  const noveltyScore = noveltyMarkers.test(method) ? 40 : 20;
+  const noveltyScore = noveltyMarkers.test(method) ? 30 : 10;
 
   // Significance markers
-  const significanceMarkers = /impact|important|benefit|contribution|significant|advance/i;
-  const significanceScore = significanceMarkers.test(problem) ? 30 : 15;
+  const significanceMarkers = /impact|important|benefit|contribution|significant|advance|gap|lack|insufficient|need/i;
+  const significanceScore = significanceMarkers.test(problem) && problem.length > 250 ? 30 : 10;
 
   // Feasibility
-  const feasibilityScore = problem.length > 100 && method.length > 100 ? 30 : 15;
+  const evaluation = String(proposal.evaluation || '');
+  const feasibilityScore = problem.length > 250 && method.length > 350 && evaluation.length > 250 ? 40 : 12;
 
   return Math.min(100, noveltyScore + significanceScore + feasibilityScore);
 }
 
 function assessGraduateReadiness(proposal, scores) {
   const requirements = [
-    { name: 'Research Question Clarity', met: scores.researchQuality >= 70 },
-    { name: 'Technical Depth', met: scores.technical >= 70 },
-    { name: 'Proper References', met: scores.references >= 60 },
-    { name: 'Clear Methodology', met: String(proposal.method || '').length > 200 },
-    { name: 'Evaluation Plan', met: String(proposal.evaluation || '').length > 100 },
-    { name: 'Realistic Timeline', met: String(proposal.timeline || '').length > 50 },
-    { name: 'Resource Planning', met: String(proposal.resources || '').length > 50 }
+    { name: 'Research Question Clarity', met: scores.researchQuality >= 80 },
+    { name: 'Technical Depth', met: scores.technical >= 75 },
+    { name: 'Proper References', met: scores.references >= 70 },
+    { name: 'Clear Methodology', met: String(proposal.method || '').length > 350 },
+    { name: 'Evaluation Plan', met: String(proposal.evaluation || '').length > 250 },
+    { name: 'Realistic Timeline', met: String(proposal.timeline || '').length > 120 },
+    { name: 'Resource Planning', met: String(proposal.resources || '').length > 100 }
   ];
 
   const readinessMet = requirements.filter(r => r.met).length;
@@ -263,7 +274,7 @@ function assessGraduateReadiness(proposal, scores) {
 
   return {
     readinessPercent,
-    readinessLevel: readinessPercent >= 85 ? 'Ready for Defense' : readinessPercent >= 70 ? 'Nearly Ready' : 'Needs Refinement',
+    readinessLevel: readinessPercent >= 85 ? 'Ready for serious revision' : readinessPercent >= 70 ? 'Promising but not submission-ready' : 'Needs Refinement',
     checklist: requirements
   };
 }

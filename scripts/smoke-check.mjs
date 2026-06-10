@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { createServer } from 'vite';
 import { proposalLatexToPdf } from '../server/pdfExport.js';
+import { extractProjectFromPdfBuffer } from '../server/pdfProjectExtractor.js';
 import { generateProposal, startAgentSession } from '../server/proposalGenerator.js';
 
 function assert(condition, message) {
@@ -27,6 +28,12 @@ console.log('Running PDF fallback smoke check...');
 const pdf = await proposalLatexToPdf(proposal.proposalLatex, proposal.project?.title || 'proposal');
 assert(Buffer.isBuffer(pdf), 'PDF export did not return a Buffer.');
 assert(pdf.slice(0, 5).toString() === '%PDF-', 'PDF export did not return a PDF buffer.');
+
+console.log('Running PDF import smoke check...');
+const imported = await extractProjectFromPdfBuffer(pdf, 'smoke-proposal.pdf');
+assert(imported.project?.title, 'PDF import did not extract a project title.');
+assert(Array.isArray(imported.fieldSuggestions), 'PDF import did not return repair suggestions.');
+assert(Array.isArray(imported.decisions), 'PDF import did not return decisions.');
 
 console.log('Running React render smoke check...');
 const vite = await createServer({

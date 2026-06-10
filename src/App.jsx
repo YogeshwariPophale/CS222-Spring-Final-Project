@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Download, FileText, Loader2, Play, RefreshCw, Sparkles } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Download, FileText, Loader2, Play, RefreshCw, Sparkles, Upload } from 'lucide-react';
 
 const DEFAULT_REQUIREMENTS = `Proposal must include:
 - Project title
@@ -136,6 +136,50 @@ function App() {
     updateProjectField(decision.field, option.value);
     setDecisions((current) => current.filter((item) => item.id !== decision.id));
     setRunLog((current) => [...current, createLog('Decision', `Selected ${option.label} for ${decision.title}.`)]);
+  }
+
+  async function importPdfProject(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    if (file.type && file.type !== 'application/pdf') {
+      setError('Please upload a PDF file.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Please upload a PDF smaller than 10 MB.');
+      return;
+    }
+
+    setStatus('importing');
+    setError('');
+    clearArtifacts();
+
+    try {
+      const pdfBase64 = await fileToBase64(file);
+      const data = await postJson('/api/project/from-pdf', {
+        fileName: file.name,
+        pdfBase64
+      });
+
+      setTopicInput(data.project?.topic || data.project?.title || '');
+      setProject({ ...EMPTY_PROJECT, ...data.project });
+      setSuggestions(data.fieldSuggestions || []);
+      setDecisions(data.decisions || []);
+      setActiveTab('pdf');
+      setRunLog([
+        createLog('Import', data.runMessage || 'Imported accepted project state from PDF.'),
+        createLog('Skip', 'Skipped rough-idea structuring and loaded the extracted state for editing.'),
+        createLog('Review', `Strict repair suggestions loaded: ${(data.fieldSuggestions || []).length}.`)
+      ]);
+    } catch (requestError) {
+      setError(readError(requestError));
+    } finally {
+      setStatus('idle');
+    }
   }
 
   async function generateProposal() {
@@ -298,7 +342,7 @@ function App() {
 
           <div className="workspace-grid">
             <section className="workspace-panel suggestions-panel">
-              <PanelHeader title="LLM Suggested Structure" meta={`${suggestions.length} fields`} />
+              <PanelHeader title="Suggested Structure / Repairs" meta={`${suggestions.length} fields`} />
               {suggestions.length ? (
                 <div className="suggestion-deck">
                   {suggestions.map((suggestion) => (
@@ -360,6 +404,22 @@ function App() {
 
             <section className="workspace-panel state-panel">
               <PanelHeader title="Accepted Project State" meta={`${acceptedCount}/${PROJECT_FIELD_PAIRS.length} ready`} />
+              <div className="reference-upload-card">
+                <div>
+                  <h3><Upload size={16} aria-hidden="true" /> Import Accepted State From PDF</h3>
+                  <p>Upload a text-based proposal PDF to skip rough-idea extraction and continue with decisions, drafting, strict review, and analysis.</p>
+                </div>
+                <label htmlFor="project-pdf-upload">
+                  PDF Proposal
+                  <input id="project-pdf-upload" type="file" accept="application/pdf" disabled={busy} onChange={importPdfProject} />
+                </label>
+                {status === 'importing' ? (
+                  <p className="override-help">
+                    <Loader2 className="spin inline-spinner" size={16} />
+                    Extracting project state from PDF...
+                  </p>
+                ) : null}
+              </div>
               <label>
                 Project Title
                 <input value={project.title} onChange={(event) => updateProjectField('title', event.target.value)} />
@@ -436,7 +496,7 @@ function App() {
                 </div>
               </div>
 
-              {renderArtifact(activeTab, result, pdfUrl, analysis)}
+              {renderArtifact(activeTab, result, pdfUrl, analysis, project)}
             </section>
           </div>
         </section>
@@ -501,6 +561,18 @@ function uniqueItems(items) {
   return [...new Set(items.filter(Boolean))];
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',').pop() : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read the PDF file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function parseJsonResponse(text, url) {
   try {
     return JSON.parse(text);
@@ -525,7 +597,8 @@ async function exportPdfUrl(proposalLatex, title) {
         throw new Error(await readResponseError(response, apiUrl));
       }
 
-      const blob = await response.blob();
+      const buffer = await response.arrayBuffer();
+      const blob = new Blob([buffer], { type: 'application/pdf' });
       return URL.createObjectURL(blob);
     } catch (requestError) {
       lastError = requestError;
@@ -550,24 +623,13 @@ async function readResponseError(response, url) {
   }
 }
 
-function renderArtifact(activeTab, result, pdfUrl, analysis) {
+function renderArtifact(activeTab, result, pdfUrl, analysis, project) {
   if (!result) {
     return <EmptyState text="Proposal artifacts appear after Generate Proposal." />;
   }
 
   if (activeTab === 'pdf') {
-    if (!pdfUrl) {
-      return <EmptyState text="PDF preview is rendering. If it stays blank in VS Code, use Open Preview." />;
-    }
-
-    return (
-      <div className="pdf-preview-frame">
-        <object className="pdf-preview" data={pdfUrl} type="application/pdf" aria-label="Compiled proposal PDF preview">
-          <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF" />
-          <p className="pdf-preview-help">Your browser did not render the PDF inline. Use Open Preview or download the PDF.</p>
-        </object>
-      </div>
-    );
+    return <IeeePaperPreview project={project} pdfUrl={pdfUrl} />;
   }
 
   if (activeTab === 'matrix') {
@@ -641,7 +703,7 @@ function AnalysisPanel({ analysis }) {
       <section className="analysis-section">
         <h3>Graduate Readiness</h3>
         <div className="readiness-bar"><span style={{ width: `${analysis.graduateReadiness.readinessPercent}%` }} /></div>
-        <p><strong>{analysis.graduateReadiness.readinessPercent}% readiness</strong> — {analysis.graduateReadiness.readinessLevel}</p>
+        <p><strong>{analysis.graduateReadiness.readinessPercent}% readiness</strong> - {analysis.graduateReadiness.readinessLevel}</p>
         <ul className="analysis-checklist">
           {analysis.graduateReadiness.checklist.map((item) => (
             <li className={item.met ? 'met' : 'unmet'} key={item.name}>{item.met ? 'Yes' : 'No'}: {item.name}</li>
@@ -680,6 +742,85 @@ function AnalysisPanel({ analysis }) {
   );
 }
 
+function IeeePaperPreview({ project, pdfUrl }) {
+  const references = extractReferences(project.references);
+  const bibliography = references.length ? references : ['Add IEEE-style references or source notes before final submission.'];
+
+  return (
+    <div className="ieee-preview-shell">
+      <article className="ieee-page" aria-label="IEEE paper preview">
+        <header className="ieee-header">
+          <h2>{project.title || 'Untitled Research Proposal'}</h2>
+          <p>Proposal Draft</p>
+          <p>Generated Research Proposal, Local Proposal Agent Workflow</p>
+        </header>
+
+        <section className="ieee-abstract">
+          <h3>Abstract</h3>
+          <p>{buildPreviewAbstract(project)}</p>
+          <h3>Keywords</h3>
+          <p>research proposal, agent workflow, source grounding, evaluation, PDF generation</p>
+        </section>
+
+        <div className="ieee-columns">
+          <IeeeSection title="I. Introduction and Motivation" text={project.problem || 'The project needs a clearer research gap and motivation.'} />
+          <IeeeSection title="II. Project Goal" text={`The objective of this work is to develop and evaluate ${project.topic || project.title || 'the proposed project'} with enough specificity for strict proposal review. The proposed work emphasizes concrete artifacts, measurable evaluation evidence, and source-grounded claims.`} />
+          <IeeeSection title="III. Method and Agent Workflow" text={project.method || 'The workflow extracts fields, asks for decisions, stores accepted project state, drafts artifacts, and supports review.'} />
+
+          <figure className="ieee-figure">
+            <div>{'Rough idea or PDF -> accepted state -> decisions -> IEEE draft -> strict review -> revised PDF'}</div>
+            <figcaption>Fig. 1. Proposed proposal-agent workflow.</figcaption>
+          </figure>
+
+          <IeeeSection title="IV. Expected Results" text="The expected result is a working prototype that produces an accepted project state, an IEEE-style proposal draft, a strict compliance matrix, and a previewable PDF artifact suitable for review and refinement." />
+          <IeeeSection title="V. Timeline and Milestones" text={project.timeline || 'The work proceeds through prototype, refinement, evaluation, and final proposal preparation milestones.'} />
+          <IeeeSection title="VI. Evaluation Plan" text={project.evaluation || 'The proposal will be evaluated with a checklist matrix, reviewer feedback, and revision evidence.'} />
+          <IeeeSection title="VII. Risks and Mitigation" text="Generated text may be incomplete, related work may be weak, and PDF compilation may fail locally. Mitigations include editable fields, explicit source notes, strict requirement review, and the built-in fallback renderer." />
+          <IeeeSection title="VIII. Resources and Budget" text={project.resources || 'The project uses a local web app, API server, source notes, and human review time.'} />
+
+          <section className="ieee-section">
+            <h3>References</h3>
+            <ol className="ieee-references">
+              {bibliography.slice(0, 12).map((reference, index) => (
+                <li key={`${reference}-${index}`}>{reference}</li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      </article>
+
+      {pdfUrl ? (
+        <details className="native-pdf-details">
+          <summary>Browser PDF embed</summary>
+          <iframe className="pdf-preview" src={pdfUrl} title="Compiled proposal PDF preview" />
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function IeeeSection({ title, text }) {
+  return (
+    <section className="ieee-section">
+      <h3>{title}</h3>
+      {paragraphs(text).map((paragraph) => (
+        <p key={paragraph}>{paragraph}</p>
+      ))}
+    </section>
+  );
+}
+
+function buildPreviewAbstract(project) {
+  return `This proposal investigates ${project.topic || project.title || 'the proposed project'}. It addresses the gap described in the project motivation, proposes a concrete workflow or method, and evaluates the resulting artifacts with strict requirements for completeness, source grounding, and measurable review evidence.`;
+}
+
+function paragraphs(text) {
+  return String(text || '')
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function analyzeProposal(project, result, coveredRows = countCovered(result?.complianceMatrix || []), totalRows = result?.complianceMatrix?.length || 0) {
   const text = [project.title, project.problem, project.method, project.timeline, project.evaluation, project.resources, project.references, result?.proposalLatex].join(' ');
   const wordCount = countWords(text);
@@ -687,74 +828,154 @@ function analyzeProposal(project, result, coveredRows = countCovered(result?.com
   const technicalTerms = countTechnicalTerms(text);
   const sentenceStats = sentenceComplexity(text);
   const completion = totalRows ? Math.round((coveredRows / totalRows) * 100) : 0;
-  const researchQuality = clamp(Math.round((project.problem ? 20 : 0) + (project.method ? 20 : 0) + (project.evaluation ? 20 : 0) + Math.min(references.length * 12, 40)));
-  const clarity = clamp(Math.round(72 + (project.problem ? 8 : 0) + (sentenceStats.averageLength > 28 ? -8 : 8)));
-  const technical = clamp(Math.round(Math.min(technicalTerms * 7, 55) + (project.method ? 25 : 0) + (project.evaluation ? 15 : 0)));
-  const referenceScore = clamp(Math.round(Math.min(references.length * 22, 80) + (/paper|citation|source|guide|feedback/i.test(project.references || '') ? 20 : 0)));
+  const problemScore = strictFieldScore(project.problem, {
+    minWords: 55,
+    markers: /gap|problem|challenge|need|lack|insufficient|without|difficulty|miss/i
+  });
+  const methodScore = strictFieldScore(project.method, {
+    minWords: 70,
+    markers: /workflow|step|input|output|agent|prototype|system|implement|generate|review|revise/i
+  });
+  const evaluationScore = strictFieldScore(project.evaluation, {
+    minWords: 55,
+    markers: /metric|baseline|compare|measure|rubric|success|failure|criteria|coverage|score/i
+  });
+  const timelineScore = strictFieldScore(project.timeline, {
+    minWords: 30,
+    markers: /phase|week|month|milestone|deliverable|deadline|stage|iteration/i
+  });
+  const resourcesScore = strictFieldScore(project.resources, {
+    minWords: 30,
+    markers: /software|tool|data|compute|api|server|budget|time|review|resource|cost/i
+  });
+  const researchQuality = clamp(Math.round((problemScore * 0.35) + (methodScore * 0.3) + (evaluationScore * 0.25) + (timelineScore * 0.1)));
+  const clarity = strictClarityScore({ wordCount, sentenceStats, project });
+  const technical = clamp(Math.round((methodScore * 0.45) + (evaluationScore * 0.25) + Math.min(uniqueTechnicalTerms(text) * 5, 30)));
+  const referenceScore = strictReferenceScore(project.references, references);
   const completionScore = clamp(completion);
-  const overall = clamp(Math.round((researchQuality * 0.26) + (clarity * 0.18) + (technical * 0.2) + (referenceScore * 0.16) + (completionScore * 0.2)));
+  const unresolvedPenalty = totalRows ? Math.max(0, totalRows - coveredRows) * 2 : 12;
+  const overall = clamp(Math.round(
+    (researchQuality * 0.28) +
+    (clarity * 0.14) +
+    (technical * 0.2) +
+    (referenceScore * 0.18) +
+    (completionScore * 0.2) -
+    unresolvedPenalty
+  ));
   const grade = gradeForScore(overall);
   const readinessChecklist = [
-    ['Clear research gap', Boolean(project.problem)],
-    ['Concrete method/workflow', Boolean(project.method)],
-    ['Evaluation plan', Boolean(project.evaluation)],
-    ['Timeline and milestones', Boolean(project.timeline)],
-    ['Resources/budget', Boolean(project.resources)],
-    ['Source notes/references', Boolean(project.references)],
-    ['Generated artifact review', Boolean(result?.complianceMatrix?.length)]
+    ['Clear research gap with evidence', problemScore >= 70],
+    ['Concrete method/workflow', methodScore >= 70],
+    ['Metrics, baselines, and success criteria', evaluationScore >= 70],
+    ['Timeline with dated milestones', timelineScore >= 65],
+    ['Resources/budget with implementation needs', resourcesScore >= 65],
+    ['Five or more credible source notes', referenceScore >= 70],
+    ['Strict matrix at least 80% covered', completionScore >= 80]
   ];
   const readinessMet = readinessChecklist.filter(([, met]) => met).length;
 
   return {
-    summary: `Overall score ${overall}/100 based on proposal completeness, source grounding, technical detail, and language quality.`,
+    summary: `Strict score ${overall}/100. This score requires substantive fields, measurable evaluation evidence, source grounding, and strict matrix coverage.`,
     scores: { overall, grade, gradeColor: gradeColor(grade) },
     dimensionScores: [
-      { label: 'Research Quality', score: researchQuality, note: 'Gap, method, evaluation, and source grounding.' },
-      { label: 'Clarity', score: clarity, note: 'Readable structure and sentence complexity.' },
-      { label: 'Technical Depth', score: technical, note: 'Workflow, evaluation, and technical terminology.' },
-      { label: 'References', score: referenceScore, note: 'Reference count and source-note quality.' },
-      { label: 'Completion', score: completionScore, note: `${coveredRows}/${totalRows || 0} checklist items covered.` }
+      { label: 'Research Quality', score: researchQuality, note: 'Strict gate for gap, method, evaluation, and timeline specificity.' },
+      { label: 'Clarity', score: clarity, note: 'Rewards complete, readable sections and penalizes thin or awkward drafts.' },
+      { label: 'Technical Depth', score: technical, note: 'Requires workflow detail, evaluation hooks, and technical vocabulary.' },
+      { label: 'References', score: referenceScore, note: 'Requires credible source notes, years, URLs/DOIs, or named papers.' },
+      { label: 'Completion', score: completionScore, note: `${coveredRows}/${totalRows || 0} strict checklist items covered.` }
     ],
     graduateReadiness: {
       readinessPercent: Math.round((readinessMet / readinessChecklist.length) * 100),
-      readinessLevel: readinessMet >= 6 ? 'Ready for graduate-level revision' : readinessMet >= 4 ? 'Promising but needs refinement' : 'Needs major development',
+      readinessLevel: readinessMet >= 6 ? 'Ready for serious revision' : readinessMet >= 4 ? 'Promising but not submission-ready' : 'Needs major development',
       checklist: readinessChecklist.map(([name, met]) => ({ name, met }))
     },
     languageAnalysis: {
-      academicTone: clamp(Math.round(65 + countMatches(text, /evaluate|proposal|method|evidence|research|workflow|criteria/gi) * 2)),
+      academicTone: clamp(Math.round(40 + countMatches(text, /evaluate|proposal|method|evidence|research|workflow|criteria|baseline|metric|claim|source/gi) * 2)),
       technicalTermCount: technicalTerms,
-      readability: clamp(Math.round(90 - Math.max(sentenceStats.averageLength - 18, 0) * 2)),
+      readability: clarity,
       averageSentenceLength: sentenceStats.averageLength,
-      note: wordCount > 250 ? 'The draft has enough substance for review; revise long sentences for readability.' : 'Add more detail to improve academic depth and readability confidence.'
+      note: wordCount >= 450 ? 'The draft has enough length for strict review; now verify claims, citations, and metrics.' : 'Strict review considers this draft thin. Add concrete claims, evidence, metrics, and source notes.'
     },
     referenceAnalysis: {
       count: references.length,
-      quality: references.length >= 4 ? 'Strong' : references.length >= 2 ? 'Developing' : 'Needs more sources',
-      suggestions: references.length >= 3
-        ? ['Connect each source to a specific claim.', 'Add citation details before final submission.']
-        : ['Add at least three relevant papers or proposal-writing sources.', 'Include source notes from seed papers or citation-graph exploration.']
+      quality: referenceScore >= 85 ? 'Strong' : referenceScore >= 70 ? 'Developing' : 'Needs more credible sources',
+      suggestions: referenceScore >= 70
+        ? ['Tie each source to a specific claim, metric, or design choice.', 'Verify authors, years, URLs/DOIs, and relevance before final submission.']
+        : ['Add at least five relevant papers or proposal-writing sources.', 'Include authors, years, URLs/DOIs, and notes explaining how each source supports a claim.']
     },
-    recommendations: buildRecommendations({ project, references, overall, completionScore, technical, clarity })
+    recommendations: buildRecommendations({
+      project,
+      references,
+      overall,
+      completionScore,
+      technical,
+      clarity,
+      scores: { problemScore, methodScore, evaluationScore, timelineScore, resourcesScore, referenceScore }
+    })
   };
 }
 
-function buildRecommendations({ project, references, overall, completionScore, technical, clarity }) {
+function buildRecommendations({ references, overall, completionScore, technical, clarity, scores }) {
   const recommendations = [];
-  if (!project.evaluation) recommendations.push({ priority: 'High', area: 'Evaluation', message: 'Add concrete metrics, comparison baselines, and success criteria.' });
-  if (references.length < 3) recommendations.push({ priority: 'High', area: 'References', message: 'Add more source notes, seed papers, or Connected Papers-style evidence.' });
+  if (scores.problemScore < 70) recommendations.push({ priority: 'High', area: 'Problem/GAP', message: 'Add a sharper research gap, affected users, and evidence that current approaches are insufficient.' });
+  if (scores.methodScore < 70) recommendations.push({ priority: 'High', area: 'Method', message: 'Describe workflow steps, inputs/outputs, human checkpoints, implementation choices, and failure handling.' });
+  if (scores.evaluationScore < 70) recommendations.push({ priority: 'High', area: 'Evaluation', message: 'Add concrete metrics, comparison baselines, success thresholds, and failure criteria.' });
+  if (references.length < 5) recommendations.push({ priority: 'High', area: 'References', message: 'Add at least five credible source notes with authors, years, URLs/DOIs, and claim links.' });
   if (technical < 70) recommendations.push({ priority: 'Medium', area: 'Technical Depth', message: 'Describe the agent workflow, data flow, and review loop in more detail.' });
   if (clarity < 75) recommendations.push({ priority: 'Medium', area: 'Clarity', message: 'Shorten long sentences and make each section start with a clear claim.' });
-  if (completionScore < 80) recommendations.push({ priority: 'High', area: 'Completion', message: 'Fill missing proposal requirements before recording or submitting.' });
-  if (overall >= 85) recommendations.push({ priority: 'Low', area: 'Polish', message: 'The draft is strong; focus on citations, examples, and final proofreading.' });
+  if (scores.timelineScore < 65) recommendations.push({ priority: 'Medium', area: 'Timeline', message: 'Add week/month milestones, deliverables, and a feasible order of work.' });
+  if (scores.resourcesScore < 65) recommendations.push({ priority: 'Medium', area: 'Resources', message: 'List concrete tools, data, compute/API needs, review time, and budget assumptions.' });
+  if (completionScore < 80) recommendations.push({ priority: 'High', area: 'Completion', message: 'Resolve every strict matrix row marked Needs work before submitting.' });
+  if (overall >= 85) recommendations.push({ priority: 'Low', area: 'Polish', message: 'The draft is strong under strict review; focus on citations, examples, and final proofreading.' });
   return recommendations.slice(0, 5);
 }
 
+function strictFieldScore(value, { minWords, markers }) {
+  const text = String(value || '');
+  const words = countWords(text);
+  if (!words) return 0;
+
+  const lengthScore = clamp(Math.round(Math.min(words / minWords, 1) * 65));
+  const markerScore = markers?.test(text) ? 25 : 0;
+  const specificityScore = countMatches(text, /\b(?:\d+|metric|baseline|dataset|source|claim|phase|week|month|criterion|criteria|evidence|compare)\b/gi) >= 2 ? 10 : 0;
+
+  return clamp(lengthScore + markerScore + specificityScore);
+}
+
+function strictClarityScore({ wordCount, sentenceStats, project }) {
+  const completedFields = PROJECT_FIELD_PAIRS.filter(([field]) => countWords(project[field]) >= 25).length;
+  const completeness = Math.round((completedFields / PROJECT_FIELD_PAIRS.length) * 45);
+  const lengthScore = wordCount >= 450 ? 25 : wordCount >= 300 ? 18 : wordCount >= 180 ? 10 : 4;
+  const sentenceScore = sentenceStats.averageLength >= 12 && sentenceStats.averageLength <= 28
+    ? 30
+    : sentenceStats.averageLength > 0
+      ? 14
+      : 0;
+
+  return clamp(completeness + lengthScore + sentenceScore);
+}
+
+function strictReferenceScore(rawReferences, references) {
+  const referenceText = String(rawReferences || '');
+  const countScore = Math.min(references.length * 10, 50);
+  const metadataHits = countMatches(referenceText, /\b(?:19|20)\d{2}\b|doi|https?:|et al\.|journal|conference|proceedings/gi);
+  const metadataScore = Math.min(metadataHits * 8, 35);
+  const claimLinkScore = /claim|supports|evidence|because|used for|source note|ground/i.test(referenceText) ? 15 : 0;
+
+  return clamp(countScore + metadataScore + claimLinkScore);
+}
+
 function extractReferences(value) {
-  return String(value || '').split(/\n|;|\.|,/).map((item) => item.trim()).filter((item) => item.length > 8);
+  return String(value || '').split(/\n|;/).map((item) => item.trim()).filter((item) => item.length > 18);
 }
 
 function countTechnicalTerms(text) {
   return countMatches(text, /agent|workflow|evaluation|citation|retrieval|proposal|matrix|latex|pdf|model|source|rubric|prototype|revision|grounding/gi);
+}
+
+function uniqueTechnicalTerms(text) {
+  const terms = String(text || '').toLowerCase().match(/agent|workflow|evaluation|citation|retrieval|proposal|matrix|latex|pdf|model|source|rubric|prototype|revision|grounding|baseline|metric|architecture|pipeline/g) || [];
+  return new Set(terms).size;
 }
 
 function sentenceComplexity(text) {

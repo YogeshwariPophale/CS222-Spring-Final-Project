@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { proposalLatexToPdf } from './pdfExport.js';
+import { extractProjectFromPdfBuffer } from './pdfProjectExtractor.js';
 import { answerAgentQuestion, generateProposal, startAgentSession } from './proposalGenerator.js';
 import { analyzeProposal, validateReferences } from './proposalAnalyzer.js';
 
@@ -14,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, '..', 'dist');
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/health', (_request, response) => {
   response.json({
@@ -54,6 +55,33 @@ app.post('/api/agent/answer', async (request, response) => {
   } catch (error) {
     response.status(500).json({
       error: 'Answer integration failed.',
+      detail: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/api/project/from-pdf', async (request, response) => {
+  try {
+    const payload = request.body || {};
+    const encodedPdf = String(payload.pdfBase64 || '').replace(/^data:application\/pdf;base64,/i, '');
+    const fileName = String(payload.fileName || 'uploaded proposal.pdf').trim();
+
+    if (!encodedPdf) {
+      response.status(400).json({ error: 'pdfBase64 is required.' });
+      return;
+    }
+
+    const pdf = Buffer.from(encodedPdf, 'base64');
+
+    if (pdf.slice(0, 5).toString() !== '%PDF-') {
+      response.status(400).json({ error: 'The uploaded file is not a valid PDF.' });
+      return;
+    }
+
+    response.json(await extractProjectFromPdfBuffer(pdf, fileName));
+  } catch (error) {
+    response.status(500).json({
+      error: 'PDF project extraction failed.',
       detail: error instanceof Error ? error.message : String(error)
     });
   }
@@ -118,7 +146,7 @@ app.post('/api/export/pdf', async (request, response) => {
     const pdf = await proposalLatexToPdf(latex, title);
 
     response.setHeader('Content-Type', 'application/pdf');
-    response.setHeader('Content-Disposition', 'attachment; filename="proposal.pdf"');
+    response.setHeader('Content-Disposition', 'inline; filename="proposal.pdf"');
     response.send(pdf);
   } catch (error) {
     response.status(500).json({

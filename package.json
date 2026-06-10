@@ -11,7 +11,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 4174",
     "start": "node server/index.js",
     "repair:local": "node scripts/restore-clean-files.mjs",
-    "check:app": "node --check server/pdfExport.js && node --check server/proposalGenerator.js && npm run build && npm run smoke:app",
+    "check:app": "node --check server/pdfExport.js && node --check server/pdfProjectExtractor.js && node --check server/proposalGenerator.js && npm run build && npm run smoke:app",
     "smoke:app": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "lucide-react": "^1.16.0",
+    "pdf-parse": "^2.4.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "vite": "^8.0.14"

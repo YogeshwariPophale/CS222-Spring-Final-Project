@@ -223,40 +223,53 @@ function buildQuestions(project) {
 
 function buildProposalLatex(project) {
   const title = latexEscape(project.title || 'Research Proposal Agent Workflow');
-  return String.raw`\documentclass[11pt]{article}
-\usepackage[margin=1in]{geometry}
+  const references = buildIeeeReferences(project.references);
+  return String.raw`\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
-\usepackage{enumitem}
-\setlist{nosep}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \title{${title}}
-\author{}
-\date{}
+\author{\IEEEauthorblockN{Proposal Draft}
+\IEEEauthorblockA{\textit{Generated Research Proposal}\\
+Local Proposal Agent Workflow}}
 \begin{document}
 \maketitle
-
 \begin{abstract}
-This proposal describes ${latexEscape(project.topic)}. The project builds and evaluates a workflow that turns a rough research idea into structured proposal state, draft artifacts, and review evidence.
+${latexParagraph(buildAbstract(project))}
 \end{abstract}
+\begin{IEEEkeywords}
+research proposal, agent workflow, source grounding, evaluation, PDF generation
+\end{IEEEkeywords}
 
-\section{Motivation and Gap}
+\section{Introduction and Motivation}
 ${latexParagraph(project.problem || 'The project needs a clearer research gap and motivation.')}
 
 \section{Project Goal}
-The goal is to create a proposal-agent workflow that helps a student or researcher move from idea exploration to a structured, reviewable proposal draft.
+The objective of this work is to develop and evaluate ${latexEscape(project.topic || project.title)} with enough specificity for strict proposal review. The proposed work emphasizes concrete artifacts, measurable evaluation evidence, and source-grounded claims.
 
 \section{Method and Agent Workflow}
 ${latexParagraph(project.method || 'The workflow extracts fields, asks for decisions, stores accepted project state, drafts artifacts, and supports review.')}
 
 \section{Workflow Diagram}
-\begin{center}
-\fbox{\begin{minipage}{0.88\linewidth}
+\begin{figure}[!t]
 \centering
-Rough idea $\rightarrow$ structured fields $\rightarrow$ student decisions $\rightarrow$ proposal draft $\rightarrow$ review matrix $\rightarrow$ revised PDF
+\fbox{\begin{minipage}{0.92\linewidth}
+\centering
+Rough idea or PDF $\rightarrow$ accepted project state $\rightarrow$ student decisions $\rightarrow$ IEEE draft $\rightarrow$ strict review matrix $\rightarrow$ revised PDF
 \end{minipage}}
-\end{center}
+\caption{Proposed proposal-agent workflow from input extraction to strict review and IEEE-formatted PDF generation.}
+\label{fig:workflow}
+\end{figure}
 
 \section{Expected Results}
-The expected result is a working prototype that produces a coherent proposal draft, a compliance matrix, and a PDF artifact suitable for review and refinement.
+The expected result is a working prototype that produces an accepted project state, an IEEE-style proposal draft, a strict compliance matrix, and a previewable PDF artifact suitable for review and refinement.
 
 \section{Timeline and Milestones}
 ${latexParagraph(project.timeline || 'The work proceeds through prototype, refinement, evaluation, and final proposal preparation milestones.')}
@@ -274,10 +287,29 @@ ${latexParagraph(project.evaluation || 'The proposal will be evaluated with a ch
 \section{Resources and Budget}
 ${latexParagraph(project.resources || 'The project uses a local web app, API server, source notes, and human review time.')}
 
-\section{References and Source Notes}
-${latexParagraph(project.references || 'Add proposal guides, seed papers, citation notes, and course feedback here.')}
+\begin{thebibliography}{00}
+${references}
+\end{thebibliography}
 
 \end{document}`;
+}
+
+function buildAbstract(project) {
+  return `This proposal investigates ${project.topic || project.title}. It addresses the gap described in the project motivation, proposes a concrete workflow or method, and evaluates the resulting artifacts with strict requirements for completeness, source grounding, and measurable review evidence.`;
+}
+
+function buildIeeeReferences(references) {
+  const items = clean(references)
+    .split(/\n|;/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 8);
+
+  const safeItems = items.length ? items : ['Course proposal guidance and source notes, accessed during project development.'];
+
+  return safeItems
+    .slice(0, 12)
+    .map((item, index) => `\\bibitem{ref${index + 1}} ${latexEscape(item)}.`)
+    .join('\n');
 }
 
 function buildComplianceMatrix(project, requirements) {
@@ -287,43 +319,147 @@ function buildComplianceMatrix(project, requirements) {
     .filter((line) => line && !/^proposal must include/i.test(line));
 
   return requirementLines.map((requirement) => {
-    const evidence = evidenceForRequirement(requirement, project);
+    const review = strictReviewForRequirement(requirement, project);
     return {
       requirement,
-      status: evidence ? 'Covered' : 'Needs work',
-      evidence: evidence || 'No matching project field was found yet.',
-      fix: evidence ? 'Review for specificity and citations.' : `Add details for: ${requirement}`
+      status: review.covered ? 'Covered' : 'Needs work',
+      evidence: review.evidence,
+      fix: review.fix
     };
   });
 }
 
-function evidenceForRequirement(requirement, project) {
+function strictReviewForRequirement(requirement, project) {
   const text = requirement.toLowerCase();
-  if (/title/.test(text)) return project.title;
-  if (/abstract/.test(text)) return project.topic;
-  if (/motivation|gap|problem/.test(text)) return project.problem;
-  if (/goal/.test(text)) return project.topic || project.problem;
-  if (/method|workflow|agent/.test(text)) return project.method;
-  if (/figure|diagram/.test(text)) return 'Workflow diagram placeholder is generated in LaTeX.';
-  if (/expected|result/.test(text)) return project.method || project.evaluation;
-  if (/milestone|timeline/.test(text)) return project.timeline;
-  if (/evaluation/.test(text)) return project.evaluation;
-  if (/risk|mitigation/.test(text)) return 'Risks and mitigation are generated in the proposal template.';
-  if (/resource|budget/.test(text)) return project.resources;
-  if (/reference|assumption|source/.test(text)) return project.references;
-  return '';
+  if (/title/.test(text)) return reviewField(project.title, { label: 'title', minWords: 4 });
+  if (/abstract/.test(text)) {
+    return reviewCombined([project.topic, project.problem, project.method], {
+      label: 'abstract basis',
+      minWords: 70,
+      markers: /problem|gap|method|workflow|evaluate|result|goal/i,
+      fix: 'Add enough topic, problem, method, and evaluation detail for a meaningful abstract.'
+    });
+  }
+  if (/motivation|gap|problem/.test(text)) {
+    return reviewField(project.problem, {
+      label: 'motivation/gap',
+      minWords: 45,
+      markers: /gap|problem|challenge|need|lack|insufficient|without|difficulty|miss/i
+    });
+  }
+  if (/goal/.test(text)) {
+    return reviewCombined([project.topic, project.problem, project.method], {
+      label: 'project goal',
+      minWords: 55,
+      markers: /goal|create|build|develop|evaluate|improve|measure|prototype/i,
+      fix: 'State a concrete project goal tied to the problem and method.'
+    });
+  }
+  if (/method|workflow|agent/.test(text)) {
+    return reviewField(project.method, {
+      label: 'method/workflow',
+      minWords: 55,
+      markers: /workflow|step|input|output|agent|prototype|system|implement|generate|review|revise/i
+    });
+  }
+  if (/figure|diagram/.test(text)) {
+    return reviewCombined([project.method, project.resources], {
+      label: 'figure/diagram plan',
+      minWords: 45,
+      markers: /figure|diagram|caption|workflow|architecture|pipeline/i,
+      fix: 'Add a project-specific figure or diagram plan with a caption, not only the generated placeholder.'
+    });
+  }
+  if (/expected|result/.test(text)) {
+    return reviewCombined([project.method, project.evaluation], {
+      label: 'expected results',
+      minWords: 55,
+      markers: /result|outcome|improve|measure|metric|evidence|compare|coverage/i,
+      fix: 'Explain expected outcomes with measurable evidence, not only a general prototype statement.'
+    });
+  }
+  if (/milestone|timeline/.test(text)) {
+    return reviewField(project.timeline, {
+      label: 'timeline/milestones',
+      minWords: 25,
+      markers: /phase|week|month|milestone|deliverable|deadline|stage|iteration/i
+    });
+  }
+  if (/evaluation/.test(text)) {
+    return reviewField(project.evaluation, {
+      label: 'evaluation plan',
+      minWords: 45,
+      markers: /metric|baseline|compare|measure|rubric|success|failure|criteria|coverage|score/i
+    });
+  }
+  if (/risk|mitigation/.test(text)) {
+    return reviewCombined([project.problem, project.method, project.evaluation], {
+      label: 'risk/mitigation',
+      minWords: 80,
+      markers: /risk|mitigation|failure|fallback|limitation|threat|bias|incomplete|validate/i,
+      fix: 'Add project-specific risks and mitigations; generic generated risks are not enough for strict review.'
+    });
+  }
+  if (/resource|budget/.test(text)) {
+    return reviewField(project.resources, {
+      label: 'resources/budget',
+      minWords: 25,
+      markers: /software|tool|data|compute|api|server|budget|time|review|resource|cost/i
+    });
+  }
+  if (/reference|assumption|source/.test(text)) {
+    return reviewField(project.references, {
+      label: 'references/source notes',
+      minWords: 35,
+      markers: /20\d{2}|doi|https?:|paper|article|guide|source|author|et al|citation/i,
+      fix: 'Add source notes with authors, years, URLs/DOIs, or specific papers tied to claims.'
+    });
+  }
+  return {
+    covered: false,
+    evidence: 'No strict rubric rule matched this requirement.',
+    fix: `Add details for: ${requirement}`
+  };
+}
+
+function reviewCombined(values, options) {
+  return reviewField(values.filter(Boolean).join(' '), options);
+}
+
+function reviewField(value, { label, minWords, markers, fix }) {
+  const evidence = clean(value);
+  const words = countWords(evidence);
+  const hasEnoughWords = words >= minWords;
+  const hasMarkers = markers ? markers.test(evidence) : true;
+  const covered = hasEnoughWords && hasMarkers;
+
+  return {
+    covered,
+    evidence: evidence
+      ? `${label}: ${words} words${hasMarkers ? '' : '; missing required specificity markers'}. ${evidence.slice(0, 180)}${evidence.length > 180 ? '...' : ''}`
+      : `No ${label} evidence was found.`,
+    fix: covered
+      ? 'Strict pass. Keep citations and specificity during final revision.'
+      : fix || `Expand ${label} to at least ${minWords} words with concrete, requirement-specific evidence.`
+  };
 }
 
 function buildEvaluationReport(project, matrix) {
   const covered = matrix.filter((row) => /^covered$/i.test(row.status)).length;
   const total = matrix.length || 1;
   const percent = Math.round((covered / total) * 100);
+  const missing = matrix.filter((row) => !/^covered$/i.test(row.status));
+  const strictLevel = percent >= 90 ? 'Strong' : percent >= 75 ? 'Developing' : percent >= 50 ? 'Weak' : 'High risk';
 
-  return `Proposal Review\n\nCoverage: ${covered}/${total} (${percent}%).\n\nStrengths:\n- The draft includes a structured project state and generated artifacts.\n- The workflow keeps fields editable for student review.\n\nRecommended next steps:\n- Add more specific citations and source notes.\n- Strengthen the evaluation metrics.\n- Review the timeline for feasibility.\n- Revise the PDF after instructor or peer feedback.\n\nCurrent title: ${project.title}`;
+  return `Strict Proposal Review\n\nCoverage: ${covered}/${total} (${percent}%). Strict level: ${strictLevel}.\n\nStrict findings:\n${missing.length ? missing.map((row) => `- ${row.requirement}: ${row.fix}`).join('\n') : '- All listed requirements passed the strict evidence gates.'}\n\nNon-negotiable next steps:\n- Replace vague claims with measurable evidence, baselines, and success criteria.\n- Add project-specific risks, limitations, and mitigations.\n- Connect references/source notes to specific claims instead of listing generic guidance.\n- Review every Needs work row before treating the PDF as submission-ready.\n\nCurrent title: ${project.title}`;
 }
 
 function clean(value) {
   return String(value || '').trim();
+}
+
+function countWords(value) {
+  return clean(value).split(/\s+/).filter(Boolean).length;
 }
 
 function titleCase(value) {
